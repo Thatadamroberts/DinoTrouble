@@ -31,6 +31,33 @@ setup: under **Settings → Pages → Build and deployment**, set **Source** to
 1. Install [Godot 4.3](https://godotengine.org/download/archive/4.3-stable/).
 2. Open `project.godot` in the editor and press **F5**.
 
+## Game modes
+
+- **Campaign:** five missions, each with a briefing and objectives. Finishing
+  one unlocks the next, and progress is remembered.
+  1. *A New Reserve*: tutorial. Gather DNA, hatch dinosaurs, build a
+     watchtower and tame a wild dinosaur.
+  2. *Stolen Eggs*: a night raid on a poacher outpost to break open the egg
+     cages. Each cage frees two raptor hatchlings.
+  3. *Hold the Line*: survive six minutes of poacher attack waves until the
+     supply boat arrives.
+  4. *Jeep Raids*: poacher jeeps hunt your engineers. Destroy 8 jeeps without
+     losing every engineer.
+  5. *Poacher HQ*: destroy the heavily defended poacher headquarters.
+- **Skirmish:** free play on a random island. Destroy the poacher camp.
+
+**Saving:** you can save from the pause menu (Esc) into 3 slots, and the game
+autosaves every 2 minutes. Load from the title screen or the pause menu. Saves,
+campaign progress and settings are stored in Godot's `user://` folder on
+desktop and in browser storage on the web.
+
+**Settings:** volume, camera scroll speed, edge scrolling, fullscreen,
+dinosaur hunger and difficulty.
+
+**Day and night:** a full day lasts about 6 minutes. At night the world
+darkens, windows, lamps, campfires and jeep headlights glow, fireflies come
+out, and every unit's sight drops by up to 25%.
+
 ## How to play
 
 **Goal:** destroy the Poacher Camp in the east. You lose if both your Ranger
@@ -107,8 +134,10 @@ All art is generated pixel art, drawn by code in `tools/`:
   reduced to hand-picked colour ramps with ordered dithering. It adds belly
   counter-shading, patterns, coloured outlines and baked soft shadows.
 - `units_art.py` has parametric rigs for each dinosaur, human and the jeep.
-  A unit sheet has **13 frames facing right**: 2 idle (breathing), 6 walk,
-  3 attack and 2 death.
+  A unit sheet has **13 columns × 2 rows**, all facing right. The columns are
+  2 idle (breathing), 6 walk, 3 attack and 2 death frames. Row 0 is a 3/4
+  front view (heading down-right) and row 1 a 3/4 back view (heading
+  up-right). The game mirrors them for left-facing units.
 - `world_art.py` draws the buildings, resources, foliage, and the seamless
   128 px terrain textures used by the ground shader.
 

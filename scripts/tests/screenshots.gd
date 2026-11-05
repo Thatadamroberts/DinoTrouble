@@ -66,8 +66,6 @@ func _damage() -> void:
 	var t = game.spawn_building("watchtower", "player", World.PLAYER_BASE + Vector2i(-3, 6), true)
 	t.take_damage(1e6, null)
 	await _frames(150)
-	var fx = hatch.damage_fx
-	print("[shots] hatchery damage fx: level=%d parts=%d visible=%s z=%d pos=%s" % [fx.level, fx.parts.size(), fx.is_visible_in_tree(), fx.z_index, fx.global_position])
 	await _shot("damage", hatch.position + Vector2(-60, -30), 1.5, false)
 
 

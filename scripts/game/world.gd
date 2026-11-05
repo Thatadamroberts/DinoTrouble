@@ -1,0 +1,519 @@
+extends Node2D
+## Main game scene. Builds the island, spawns everything, and offers queries
+## (targets, resources, drop-offs) that units, buildings and AI rely on.
+
+const MapScript = preload("res://scripts/core/map.gd")
+const UnitScript = preload("res://scripts/units/unit.gd")
+const BuildingScript = preload("res://scripts/buildings/building.gd")
+const ResourceScript = preload("res://scripts/game/resource_node.gd")
+const ProjectileScript = preload("res://scripts/game/projectile.gd")
+const FxScript = preload("res://scripts/game/fx.gd")
+const GroundScript = preload("res://scripts/game/ground.gd")
+const FogScript = preload("res://scripts/game/fog.gd")
+const SelectionScript = preload("res://scripts/game/selection.gd")
+const CameraScript = preload("res://scripts/game/rts_camera.gd")
+const HudScript = preload("res://scripts/ui/hud.gd")
+const AIScript = preload("res://scripts/ai/poacher_ai.gd")
+
+const MAP_SIZE := 64
+const PLAYER_BASE := Vector2i(14, 49)
+const ENEMY_BASE := Vector2i(49, 14)
+const HASH_CELL := 64.0
+
+const PLAYER_AMBER := [Vector2i(9, 44), Vector2i(19, 54)]
+const PLAYER_CRATES := [Vector2i(8, 51), Vector2i(22, 47)]
+const ENEMY_AMBER := [Vector2i(44, 9), Vector2i(54, 19)]
+const ENEMY_CRATES := [Vector2i(51, 8), Vector2i(47, 22)]
+const MID_AMBER := [Vector2i(31, 31), Vector2i(24, 22), Vector2i(40, 41)]
+const MID_CRATES := [Vector2i(22, 34), Vector2i(41, 28), Vector2i(33, 45), Vector2i(29, 17)]
+## [species, home tile, count]
+const WILD_GROUPS := [
+	["raptor", Vector2i(36, 25), 3],
+	["triceratops", Vector2i(24, 38), 2],
+	["dilophosaurus", Vector2i(43, 35), 2],
+	["triceratops", Vector2i(37, 47), 1],
+	["raptor", Vector2i(26, 13), 2],
+]
+
+var map_seed := -1
+var map = null
+var ground: Node2D
+var entities: Node2D
+var projectiles: Node2D
+var fog = null
+var selection = null
+var camera = null
+var hud = null
+var ai = null
+
+var grid_hash := {}
+var sfx_pool: Array = []
+var sfx_next := 0
+var sfx_last := {}
+var sfx_cache := {}
+var ui_player: AudioStreamPlayer
+var alert_cd := 0.0
+var spawn_count := {}
+
+
+func _ready() -> void:
+	GameState.reset()
+	GameState.world = self
+	if map_seed < 0:
+		map_seed = randi() % 100000
+	_build_map()
+
+	ground = GroundScript.new()
+	ground.name = "Ground"
+	add_child(ground)
+	ground.setup(map)
+
+	entities = Node2D.new()
+	entities.name = "Entities"
+	entities.y_sort_enabled = true
+	add_child(entities)
+
+	projectiles = Node2D.new()
+	projectiles.name = "Projectiles"
+	projectiles.z_index = 20
+	add_child(projectiles)
+
+	fog = FogScript.new()
+	fog.name = "Fog"
+	fog.setup(self)
+	add_child(fog)
+
+	selection = SelectionScript.new()
+	selection.name = "Selection"
+	selection.setup(self)
+	add_child(selection)
+
+	camera = CameraScript.new()
+	camera.name = "Camera"
+	camera.setup(self)
+	add_child(camera)
+
+	_setup_audio()
+	_spawn_decor()
+	_spawn_start()
+
+	ai = AIScript.new()
+	ai.name = "PoacherAI"
+	ai.setup(self)
+	add_child(ai)
+
+	hud = HudScript.new()
+	hud.name = "HUD"
+	add_child(hud)
+	hud.setup(self)
+
+	focus_home()
+	fog.recompute()
+	GameState.game_over.connect(_on_game_over)
+	GameState.notify("Defend the reserve! Destroy the poacher camp to the east.")
+	GameState.notify("Tip: right-click amber with Engineers to gather DNA, then hatch dinosaurs at the Hatchery.")
+
+
+func _build_map() -> void:
+	map = MapScript.new()
+	map.size = MAP_SIZE
+	var clearings: Array = [[PLAYER_BASE, 9.0], [ENEMY_BASE, 9.0]]
+	for t in PLAYER_AMBER + PLAYER_CRATES + ENEMY_AMBER + ENEMY_CRATES + MID_AMBER + MID_CRATES:
+		clearings.append([t, 1.6])
+	for g in WILD_GROUPS:
+		clearings.append([g[1], 2.5])
+	var center := Vector2i(MAP_SIZE / 2, MAP_SIZE / 2)
+	var roads: Array = [[PLAYER_BASE, center], [center, ENEMY_BASE]]
+	map.generate(map_seed, clearings, roads)
+
+
+func _spawn_decor() -> void:
+	var textures := {}
+	for d in map.decor:
+		var key := "%s_%d" % [d["type"], d["variant"]]
+		if not textures.has(key):
+			textures[key] = load("res://assets/sprites/decor/%s.png" % key)
+		var s := Sprite2D.new()
+		var tex: Texture2D = textures[key]
+		s.texture = tex
+		var jitter := Vector2(randf_range(-5, 5), randf_range(-3, 3))
+		s.position = Iso.tile_to_world(d["tile"]) + jitter
+		s.offset = Vector2(0, -tex.get_height() / 2.0 + (4.0 if d["type"] != "bush" else 2.0))
+		s.flip_h = randf() < 0.5
+		entities.add_child(s)
+
+
+func _spawn_start() -> void:
+	spawn_building("ranger_station", "player", Vector2i(13, 48), true)
+	spawn_building("hatchery", "player", Vector2i(17, 44), true)
+	spawn_building("poacher_camp", "poacher", Vector2i(48, 13), true)
+	spawn_building("poacher_tower", "poacher", Vector2i(44, 16), true)
+	if GameState.difficulty >= 2:
+		spawn_building("poacher_tower", "poacher", Vector2i(51, 18), true)
+
+	for t in PLAYER_AMBER + ENEMY_AMBER + MID_AMBER:
+		spawn_resource("amber", t)
+	for t in PLAYER_CRATES + ENEMY_CRATES + MID_CRATES:
+		spawn_resource("crates", t)
+
+	var p0 := PLAYER_BASE + Vector2i(3, 3)
+	for id in ["engineer", "engineer", "engineer", "ranger", "ranger"]:
+		spawn_unit(id, "player", free_spot(p0))
+	for i in 2:
+		spawn_unit("raptor", "player", free_spot(Vector2i(20, 48)))
+	var e0 := ENEMY_BASE + Vector2i(3, 3)
+	for id in ["trapper", "trapper", "trapper", "hunter", "hunter", "hunter", "jeep"]:
+		spawn_unit(id, "poacher", free_spot(e0))
+	for g in WILD_GROUPS:
+		for i in int(g[2]):
+			spawn_unit(g[0], "wild", free_spot(g[1]))
+
+
+## World position on a walkable tile near t, with a little jitter.
+func free_spot(t: Vector2i) -> Vector2:
+	var w: Vector2i = map.nearest_walkable(t + Vector2i(randi_range(-1, 1), randi_range(-1, 1)))
+	return Iso.tile_to_world(w) + Vector2(randf_range(-10, 10), randf_range(-5, 5))
+
+
+# ---------------------------------------------------------------------------
+# Spawning
+# ---------------------------------------------------------------------------
+func spawn_unit(id: String, faction: String, pos: Vector2):
+	var u = UnitScript.new()
+	u.setup(id, faction, pos, self)
+	spawn_count[faction] = int(spawn_count.get(faction, 0)) + 1
+	entities.add_child(u)
+	return u
+
+
+func spawn_building(id: String, faction: String, origin: Vector2i, complete: bool = true):
+	var b = BuildingScript.new()
+	b.setup(id, faction, origin, self, complete)
+	entities.add_child(b)
+	return b
+
+
+func spawn_resource(id: String, t: Vector2i):
+	var r = ResourceScript.new()
+	r.setup(id, map.nearest_walkable(t), self)
+	entities.add_child(r)
+	return r
+
+
+func spawn_projectile(from_ent, to_ent, kind: String, dmg: float, from_pos = null) -> void:
+	if to_ent == null or not is_instance_valid(to_ent):
+		return
+	var p = ProjectileScript.new()
+	var start: Vector2 = from_pos if from_pos != null else from_ent.position + Vector2(0, -12)
+	p.setup(self, from_ent, to_ent, kind, dmg, start)
+	projectiles.add_child(p)
+
+
+func spawn_fx(kind: String, pos: Vector2, color: Color = Color.WHITE) -> void:
+	var f = FxScript.new()
+	f.setup(kind, pos, color)
+	projectiles.add_child(f)
+
+
+# ---------------------------------------------------------------------------
+# Combat
+# ---------------------------------------------------------------------------
+func apply_hit(attacker, target, dmg: float, kind: String) -> void:
+	if target == null or not is_instance_valid(target) or target.dead:
+		return
+	var src = attacker if (attacker != null and is_instance_valid(attacker) and not attacker.dead) else null
+	var was_alive: bool = not target.dead
+	var target_faction: String = target.faction
+	var target_unit: bool = target.kind_tag == "unit"
+	var fx_pos: Vector2 = target.position + Vector2(0, -10)
+	target.take_damage(dmg, src)
+	if was_alive and target.dead and src != null:
+		if src.faction == "player" and target_faction == "poacher":
+			GameState.stats["killed"] += 1
+		if target_faction == "player" and target_unit:
+			GameState.stats["lost"] += 1
+	if not target.dead and target_unit:
+		match kind:
+			"venom":
+				target.apply_slow(3.0)
+			"net":
+				if target.is_dino():
+					target.apply_stun(2.2)
+	match kind:
+		"venom":
+			spawn_fx("splat", fx_pos)
+		"bullet":
+			spawn_fx("spark", fx_pos)
+
+
+## Should `a` attack `b` on its own initiative?
+func is_auto_hostile(a, b) -> bool:
+	if b.dead or a.faction == b.faction or b.kind_tag == "resource":
+		return false
+	if a.faction == "wild":
+		return true
+	if b.faction == "wild":
+		return false
+	return true
+
+
+## Nearest entity `a` would attack on its own within `rng` (units first).
+func find_enemy(a, rng: float):
+	var best = null
+	var best_d := rng
+	for o in units_near(a.position, rng):
+		if o == a or not is_auto_hostile(a, o):
+			continue
+		if a.faction == "player" and not o.visible:
+			continue
+		var d: float = Iso.idist(a.position, o.position) - o.radius
+		if d < best_d:
+			best_d = d
+			best = o
+	if best != null:
+		return best
+	for b in get_tree().get_nodes_in_group("buildings"):
+		if not is_auto_hostile(a, b):
+			continue
+		if a.faction == "player" and not b.visible:
+			continue
+		var d: float = Iso.idist(a.position, b.position) - b.radius
+		if d < best_d:
+			best_d = d
+			best = b
+	return best
+
+
+func _physics_process(delta: float) -> void:
+	alert_cd -= delta
+	grid_hash.clear()
+	for u in get_tree().get_nodes_in_group("units"):
+		if u.dead:
+			continue
+		var k := Vector2i(floori(u.position.x / HASH_CELL), floori(u.position.y / HASH_CELL))
+		if grid_hash.has(k):
+			grid_hash[k].append(u)
+		else:
+			grid_hash[k] = [u]
+
+
+func units_near(pos: Vector2, r: float) -> Array:
+	var out: Array = []
+	var cells := int(ceil(r / HASH_CELL))
+	var c := Vector2i(floori(pos.x / HASH_CELL), floori(pos.y / HASH_CELL))
+	for dy in range(-cells, cells + 1):
+		for dx in range(-cells, cells + 1):
+			var k := c + Vector2i(dx, dy)
+			if grid_hash.has(k):
+				out.append_array(grid_hash[k])
+	return out
+
+
+# ---------------------------------------------------------------------------
+# Queries
+# ---------------------------------------------------------------------------
+func entity_at(pos: Vector2):
+	var best = null
+	var best_d := 1e9
+	for u in get_tree().get_nodes_in_group("units"):
+		if u.dead or not u.visible:
+			continue
+		var d: float = pos.distance_to(u.position + Vector2(0, -u.pick_h))
+		if d < maxf(u.radius * 1.6, 14.0) and d < best_d:
+			best_d = d
+			best = u
+	if best != null:
+		return best
+	for r in get_tree().get_nodes_in_group("resources"):
+		if r.visible and pos.distance_to(r.position + Vector2(0, -10)) < 22.0:
+			return r
+	for b in get_tree().get_nodes_in_group("buildings"):
+		if not b.dead and b.visible and b.hit_test(pos):
+			return b
+	return null
+
+
+func near_feeder(u) -> bool:
+	for b in get_tree().get_nodes_in_group("buildings"):
+		if b.def_id == "hatchery" and b.built and not b.dead and b.faction == u.faction:
+			if Iso.idist(u.position, b.position) < float(b.data["feeder"]):
+				return true
+	return false
+
+
+func nearest_dropoff(faction: String, pos: Vector2):
+	var best = null
+	var best_d := 1e9
+	for b in get_tree().get_nodes_in_group("buildings"):
+		if b.dead or not b.built or b.faction != faction or not b.data.get("dropoff", false):
+			continue
+		var d: float = Iso.idist(pos, b.position)
+		if d < best_d:
+			best_d = d
+			best = b
+	return best
+
+
+func nearest_building(faction: String, id: String, pos: Vector2):
+	var best = null
+	var best_d := 1e9
+	for b in get_tree().get_nodes_in_group("buildings"):
+		if b.dead or b.faction != faction or b.def_id != id:
+			continue
+		var d: float = Iso.idist(pos, b.position)
+		if d < best_d:
+			best_d = d
+			best = b
+	return best
+
+
+func find_building(faction: String, id: String):
+	for b in get_tree().get_nodes_in_group("buildings"):
+		if not b.dead and b.faction == faction and b.def_id == id:
+			return b
+	return null
+
+
+func nearest_resource(pos: Vector2, res_type: String, max_d: float):
+	var best = null
+	var best_d := max_d
+	for r in get_tree().get_nodes_in_group("resources"):
+		if r.dead or r.res_type != res_type:
+			continue
+		var d: float = Iso.idist(pos, r.position)
+		if d < best_d:
+			best_d = d
+			best = r
+	return best
+
+
+func units_of(faction: String) -> Array:
+	var out: Array = []
+	for e in get_tree().get_nodes_in_group("faction_" + faction):
+		if e.kind_tag == "unit" and not e.dead:
+			out.append(e)
+	return out
+
+
+func count_units(faction: String) -> int:
+	return units_of(faction).size()
+
+
+func can_place(id: String, origin: Vector2i) -> bool:
+	var s: int = Defs.BUILDINGS[id]["size"]
+	for y in s:
+		for x in s:
+			var t := origin + Vector2i(x, y)
+			if not map.is_walkable(t) or not fog.tile_explored(t):
+				return false
+	# Don't build on top of units.
+	var center: Vector2 = Iso.tile_to_world(Vector2(origin.x + (s - 1) / 2.0, origin.y + (s - 1) / 2.0))
+	for u in units_near(center, s * 40.0):
+		var g: Vector2 = Iso.world_to_grid(u.position)
+		if g.x > origin.x - 0.6 and g.y > origin.y - 0.6 and g.x < origin.x + s - 0.4 and g.y < origin.y + s - 0.4:
+			return false
+	return true
+
+
+## Production speed multiplier (the AI gets a handicap or bonus).
+func build_speed(faction: String) -> float:
+	if faction == "poacher":
+		return [0.75, 1.0, 1.25][GameState.difficulty]
+	return 1.0
+
+
+func income_mult(faction: String) -> float:
+	if faction == "poacher":
+		return [0.6, 1.0, 1.5][GameState.difficulty]
+	return 1.0
+
+
+func view_rect() -> Rect2:
+	var sz: Vector2 = get_viewport().get_visible_rect().size / camera.zoom
+	return Rect2(camera.position - sz / 2.0, sz)
+
+
+func focus_home() -> void:
+	var b = find_building("player", "ranger_station")
+	if b == null:
+		b = find_building("player", "hatchery")
+	camera.focus_on(b.position if b != null else Iso.tile_to_world(PLAYER_BASE))
+
+
+func alert_attack(pos: Vector2) -> void:
+	if alert_cd > 0.0:
+		return
+	alert_cd = 12.0
+	if not view_rect().grow(-40.0).has_point(pos):
+		GameState.notify("Your reserve is under attack!")
+		play_ui("alert")
+		if hud != null:
+			hud.ping_minimap(pos)
+
+
+# ---------------------------------------------------------------------------
+# Deaths & game end
+# ---------------------------------------------------------------------------
+func on_entity_died(e) -> void:
+	if selection != null:
+		selection.forget(e)
+	if e.kind_tag == "building":
+		_check_end()
+
+
+func _check_end() -> void:
+	if GameState.over:
+		return
+	if find_building("poacher", "poacher_camp") == null:
+		GameState.end_game(true)
+		return
+	if find_building("player", "ranger_station") == null and find_building("player", "hatchery") == null:
+		GameState.end_game(false)
+
+
+func _on_game_over(victory: bool) -> void:
+	play_ui("victory" if victory else "defeat")
+	if hud != null:
+		hud.show_end(victory)
+
+
+# ---------------------------------------------------------------------------
+# Audio
+# ---------------------------------------------------------------------------
+func _setup_audio() -> void:
+	for i in 12:
+		var p := AudioStreamPlayer2D.new()
+		p.max_distance = 1400.0
+		p.bus = "Master"
+		add_child(p)
+		sfx_pool.append(p)
+	ui_player = AudioStreamPlayer.new()
+	add_child(ui_player)
+
+
+func _stream(sound: String) -> AudioStream:
+	if not sfx_cache.has(sound):
+		sfx_cache[sound] = load("res://assets/sfx/%s.wav" % sound)
+	return sfx_cache[sound]
+
+
+func play_sfx(sound: String, pos: Vector2, db: float = 0.0, pitch: float = 1.0) -> void:
+	var now := Time.get_ticks_msec()
+	if now - int(sfx_last.get(sound, -1000)) < 60:
+		return
+	if not view_rect().grow(300.0).has_point(pos):
+		return
+	sfx_last[sound] = now
+	var p: AudioStreamPlayer2D = sfx_pool[sfx_next]
+	sfx_next = (sfx_next + 1) % sfx_pool.size()
+	p.stream = _stream(sound)
+	p.global_position = pos
+	p.volume_db = db - 4.0
+	p.pitch_scale = pitch * randf_range(0.92, 1.08)
+	p.play()
+
+
+func play_ui(sound: String) -> void:
+	ui_player.stream = _stream(sound)
+	ui_player.volume_db = -6.0
+	ui_player.play()

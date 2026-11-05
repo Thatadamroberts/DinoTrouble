@@ -247,6 +247,7 @@ func _process(delta: float) -> void:
 		if combat_pings.size() >= 2 and music_state != "combat":
 			set_music("combat")
 		elif music_state == "combat" and clock - last_combat > COMBAT_HOLD:
+			combat_pings.clear()  # stale pings must not flip straight back to combat
 			set_music("explore")
 	# ambience
 	amb_t -= delta

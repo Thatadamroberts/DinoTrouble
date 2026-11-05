@@ -59,6 +59,7 @@ var last_frame := -1
 var trail_t := 0.0
 var breath_phase := randf() * 2.0
 var facing_left := false
+var facing_back := false
 var prev_pos := Vector2.ZERO
 var world = null
 var map = null
@@ -81,7 +82,8 @@ func setup(id: String, fac: String, pos: Vector2, w) -> void:
 	sprite = Sprite2D.new()
 	sprite.texture = Defs.unit_texture(id)
 	sprite.hframes = Defs.SHEET_FRAMES
-	var fh: float = sprite.texture.get_height()
+	sprite.vframes = Defs.SHEET_ROWS
+	var fh: float = sprite.texture.get_height() / float(Defs.SHEET_ROWS)
 	sprite.offset = Vector2(0, -fh / 2.0 + 3.0)
 	add_child(sprite)
 	pick_h = fh / 2.0 - 3.0
@@ -754,6 +756,8 @@ func _do_feed(delta: float) -> void:
 func _face(p: Vector2) -> void:
 	if absf(p.x - position.x) > 1.0:
 		facing_left = p.x < position.x
+	if absf(p.y - position.y) > 2.0:
+		facing_back = p.y < position.y
 
 
 func _separate(delta: float) -> void:
@@ -781,22 +785,28 @@ func _animate(delta: float) -> void:
 	var moving := moved.length() > 0.05 * 60.0 * delta
 	if moving and absf(moved.x) > 0.02:
 		facing_left = moved.x < 0.0
+	if moving and absf(moved.y) > 0.02:
+		facing_back = moved.y < 0.0
 	if attack_anim_t > 0.0:
 		var k := clampi(int((0.3 - attack_anim_t) / 0.1), 0, 2)
-		sprite.frame = Defs.FRAMES_ATTACK[k]
+		_set_col(Defs.FRAMES_ATTACK[k])
 	elif moving:
 		anim_t += delta * clampf(float(data["speed"]) / 8.0, 8.0, 14.0)
-		sprite.frame = Defs.FRAMES_WALK[int(anim_t) % Defs.FRAMES_WALK.size()]
+		_set_col(Defs.FRAMES_WALK[int(anim_t) % Defs.FRAMES_WALK.size()])
 	else:
 		var breath := int((GameState.elapsed + breath_phase) / 0.7) % 2
-		sprite.frame = Defs.FRAMES_IDLE[breath]
+		_set_col(Defs.FRAMES_IDLE[breath])
 	sprite.flip_h = facing_left
 	_footsteps(moving, delta)
 
 
+func _set_col(col: int) -> void:
+	sprite.frame_coords = Vector2i(col, 1 if facing_back else 0)
+
+
 ## Dust where heavy feet land, and a dust trail behind vehicles.
 func _footsteps(moving: bool, delta: float) -> void:
-	var f := sprite.frame
+	var f := sprite.frame_coords.x
 	var k: String = data.get("kind", "")
 	if moving and k == "dino" and f != last_frame and (f == Defs.FRAMES_WALK[1] or f == Defs.FRAMES_WALK[4]):
 		if world.is_on_screen(position):

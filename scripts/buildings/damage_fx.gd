@@ -54,7 +54,7 @@ func _process(delta: float) -> void:
 		level = 1
 	else:
 		level = 0
-	var on_screen := world == null or world.view_rect().grow(250.0).has_point(global_position)
+	var on_screen: bool = world == null or world.view_rect().grow(250.0).has_point(global_position)
 	if level > 0 and on_screen:
 		emit_t -= delta
 		while emit_t <= 0.0 and parts.size() < MAX_PARTS:

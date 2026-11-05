@@ -7,6 +7,8 @@ const POP_CAP := 30
 
 ## Unit sprite sheet layout (all frames face right).
 const SHEET_FRAMES := 13
+## Rows: 0 = 3/4 front (heading down-right), 1 = 3/4 back (heading up-right).
+const SHEET_ROWS := 2
 const FRAMES_IDLE := [0, 1]
 const FRAMES_WALK := [2, 3, 4, 5, 6, 7]
 const FRAMES_ATTACK := [8, 9, 10]
@@ -173,7 +175,7 @@ func unit_portrait(id: String) -> Texture2D:
 		var sheet := unit_texture(id)
 		var at := AtlasTexture.new()
 		at.atlas = sheet
-		at.region = Rect2(0, 0, sheet.get_width() / float(SHEET_FRAMES), sheet.get_height())
+		at.region = Rect2(0, 0, sheet.get_width() / float(SHEET_FRAMES), sheet.get_height() / float(SHEET_ROWS))
 		_tex_cache[key] = at
 	return _tex_cache[key]
 

@@ -150,6 +150,7 @@ func _build_parade() -> void:
 		var s := Sprite2D.new()
 		s.texture = Defs.unit_texture(ids[i])
 		s.hframes = Defs.SHEET_FRAMES
+		s.vframes = Defs.SHEET_ROWS
 		s.scale = Vector2(2, 2)
 		s.position = Vector2(-120.0 - i * 170.0, 0)
 		add_child(s)
@@ -164,7 +165,7 @@ func _process(delta: float) -> void:
 		s.position.x += delta * 70.0
 		if s.position.x > w + 120.0:
 			s.position.x = -150.0
-		s.position.y = size.y - 40.0 - s.texture.get_height()
+		s.position.y = size.y - 40.0 - s.texture.get_height() / float(Defs.SHEET_ROWS)
 		s.frame = Defs.FRAMES_WALK[int(t * 10.0 + i) % Defs.FRAMES_WALK.size()]
 
 

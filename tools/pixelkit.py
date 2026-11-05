@@ -379,26 +379,45 @@ def quantise(values, ramp, dither=0.6):
 
 
 class ScaledCanvas:
-    """Draws a rig authored in base units onto a k-times bigger canvas.
+    """Draws a rig authored in base units (side view, facing right) onto a
+    k-times bigger canvas, optionally as a 3/4 view.
 
     Shapes scale with k so they gain pixels for detail, while pixel()/line()
-    stay 1 px wide, which keeps eyes, teeth and claws crisp."""
+    stay 1 px wide, which keeps eyes, teeth and claws crisp.
 
-    def __init__(self, w, h, k):
+    view: "side", "front" (3/4 toward the viewer, heading down-right on
+    screen) or "back" (3/4 away, heading up-right). The 3/4 views shear the
+    rig's forward axis along the isometric diagonal around pivot_x (the
+    feet), foreshorten it, and pad the top so nothing is clipped."""
+
+    VIEWS = {"side": (1.0, 0.0), "front": (0.86, 0.36), "back": (0.86, -0.36)}
+
+    def __init__(self, w, h, k, view="side", pivot_x=None, pad_top=0.0):
         self.k = k
-        self.c = Canvas(int(round(w * k)), int(round(h * k)))
+        self.fs, self.tilt = self.VIEWS[view]
+        self.view = view
+        self.pivot = w / 2 if pivot_x is None else pivot_x
+        self.pad = pad_top
+        self.c = Canvas(int(round(w * k)), int(round((h + pad_top) * k)))
+
+    def map(self, x, y):
+        dx = x - self.pivot
+        return ((self.pivot + dx * self.fs) * self.k, (y + self.pad + dx * self.tilt) * self.k)
+
+    def _unmap(self, xx, yy):
+        bx = xx / self.k
+        dx = (bx - self.pivot) / self.fs
+        return self.pivot + dx, yy / self.k - self.pad - dx * self.tilt
 
     def _pat(self, pattern):
         if pattern is None:
             return None
-        k = self.k
-        return lambda xx, yy, nx, ny: pattern(xx / k, yy / k, nx, ny)
+        return lambda xx, yy, nx, ny: pattern(*self._unmap(xx, yy), nx, ny)
 
     def _clip(self, clip):
         if clip is None:
             return None
-        k = self.k
-        return lambda xx, yy: clip(xx / k, yy / k)
+        return lambda xx, yy: clip(*self._unmap(xx, yy))
 
     @property
     def n(self):
@@ -406,11 +425,17 @@ class ScaledCanvas:
 
     def ellipse(self, cx, cy, rx, ry, mat, rot=0.0, group=None, shade=1.0, pattern=None, round_=1.0, belly_t=0.35, clip=None):
         k = self.k
-        self.c.ellipse(cx * k, cy * k, rx * k, ry * k, mat, rot, group, shade, self._pat(pattern), round_, belly_t, self._clip(clip))
+        x, y = self.map(cx, cy)
+        # approximate the sheared ellipse: tilt its long axis with the body
+        rot2 = rot + math.degrees(math.atan2(self.tilt, self.fs)) * abs(math.cos(math.radians(rot)))
+        sx = math.hypot(self.fs, self.tilt)
+        c, s = abs(math.cos(math.radians(rot))), abs(math.sin(math.radians(rot)))
+        rx2 = rx * (c * sx + s)
+        self.c.ellipse(x, y, rx2 * k, ry * k, mat, rot2, group, shade, self._pat(pattern), round_, belly_t, self._clip(clip))
 
     def capsule(self, p0, p1, r0, r1, mat, group=None, shade=1.0, pattern=None, belly_t=0.35):
         k = self.k
-        self.c.capsule((p0[0] * k, p0[1] * k), (p1[0] * k, p1[1] * k), r0 * k, r1 * k, mat, group, shade, self._pat(pattern), belly_t)
+        self.c.capsule(self.map(*p0), self.map(*p1), r0 * k, r1 * k, mat, group, shade, self._pat(pattern), belly_t)
 
     def chain(self, pts, radii, mat, group=None, shade=1.0, pattern=None, belly_t=0.35):
         g = group if group is not None else self.c.n
@@ -418,15 +443,13 @@ class ScaledCanvas:
             self.capsule(pts[i], pts[i + 1], radii[i], radii[i + 1], mat, g, shade, pattern, belly_t)
 
     def polygon(self, pts, mat, normal=(0.0, -0.3, 0.95), group=None, shade=1.0, pattern=None, flat=None):
-        k = self.k
-        self.c.polygon([(x * k, y * k) for x, y in pts], mat, normal, group, shade, self._pat(pattern), flat)
+        self.c.polygon([self.map(x, y) for x, y in pts], mat, normal, group, shade, self._pat(pattern), flat)
 
     def pixel(self, x, y, color, group=-2):
-        self.c.pixel(x * self.k, y * self.k, color, group)
+        self.c.pixel(*self.map(x, y), color, group)
 
     def line(self, p0, p1, color):
-        k = self.k
-        self.c.line((p0[0] * k, p0[1] * k), (p1[0] * k, p1[1] * k), color)
+        self.c.line(self.map(*p0), self.map(*p1), color)
 
     def finish(self, outline=True, inner=True):
         return self.c.finish(outline, inner)

@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          timeout 600 godot --headless --fixed-fps 60 --path . res://scenes/tests/smoke_test.tscn 2>&1 | tee smoke.log
+          timeout 240 godot --headless --fixed-fps 60 --path . res://scenes/tests/smoke_test.tscn 2>&1 | tee smoke.log
           if grep -E "SCRIPT ERROR|Parse Error|Failed to load script|Invalid call|Invalid access" smoke.log; then
             echo "::error::Script errors found in smoke test output"
             exit 1
@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          timeout 300 xvfb-run -a -s "-screen 0 1280x720x24" \
+          timeout 200 xvfb-run -a -s "-screen 0 1280x720x24" \
             godot --rendering-driver opengl3 --resolution 1280x720 --path . res://scenes/tests/screenshots.tscn 2>&1 | tee shots.log
           if grep -E "SHADER ERROR|SCRIPT ERROR|Parse Error|Failed to load" shots.log; then
             echo "::error::Errors while rendering"

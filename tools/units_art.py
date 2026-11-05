@@ -57,10 +57,15 @@ def leg_target(hip_x, ground, phase, stride, lift, offset=0.0):
 # ---------------------------------------------------------------------------
 # Biped dinosaur rig (raptor, dilophosaurus, T. rex)
 # ---------------------------------------------------------------------------
-def biped(w, h, frame, spec):
+def view_canvas(w, h, k, view, pivot):
+    pad = 0.36 * max(pivot, w - pivot)
+    return ScaledCanvas(w, h, k, view, pivot, pad)
+
+
+def biped(w, h, frame, spec, view="side"):
     p = pose(frame)
     s = spec["scale"]
-    c = ScaledCanvas(w, h, spec.get("k", 1.0))
+    c = view_canvas(w, h, spec.get("k", 1.0), view, spec["hip"][0] * s)
     skin, far_skin = spec["skin"], spec["skin"]
     ground = h - 3
     bob = 0.0
@@ -273,16 +278,16 @@ TREX = {
 }
 
 
-def raptor(frame):
-    return biped(66, 42, frame, RAPTOR)
+def raptor(frame, view="side"):
+    return biped(66, 42, frame, RAPTOR, view)
 
 
-def dilophosaurus(frame):
-    return biped(70, 50, frame, DILO)
+def dilophosaurus(frame, view="side"):
+    return biped(70, 50, frame, DILO, view)
 
 
-def trex(frame):
-    return biped(118, 78, frame, TREX)
+def trex(frame, view="side"):
+    return biped(118, 78, frame, TREX, view)
 
 
 # ---------------------------------------------------------------------------
@@ -294,10 +299,10 @@ FRILL = Mat(["#4a2a14", "#7a4a20", "#b0702c", "#d89a40", "#f0c868"])
 BONE = Mat(["#6a6450", "#a8a088", "#d8d0b4", "#f4eedc"], spec=0.5)
 
 
-def triceratops(frame):
+def triceratops(frame, view="side"):
     w, h = 88, 56
     p = pose(frame)
-    c = ScaledCanvas(w, h, 1.3)
+    c = view_canvas(w, h, 1.3, view, 38)
     ground = h - 3
     dead = p["dead"]
     bob = -abs(math.sin(p["phase"])) * 1.0 if p["walk"] else p["breath"] * 0.5
@@ -364,15 +369,16 @@ METAL = Mat(["#1a1a1e", "#3a3a40", "#62646c", "#9a9ca4"], spec=0.8)
 WOOD = Mat(["#2a1808", "#5a3418", "#8a5428", "#b47a40"])
 
 
-def human(frame, look):
+def human(frame, look, view="side"):
     w, h = 28, 44
     p = pose(frame)
-    c = ScaledCanvas(w, h, 1.25)
+    c = view_canvas(w, h, 1.25, view, 12)
     ground = h - 3
     cx = 12
     dead = p["dead"]
     if dead:
-        return human_dead(frame, look, dead)
+        return human_dead(frame, look, dead, view)
+    back = view == "back"
     bob = -abs(math.sin(p["phase"])) * 1.0 if p["walk"] else p["breath"] * 0.5
     hip = (cx, 27 + bob)
     shirt, pants, hat = look["shirt"], look["pants"], look["hat"]
@@ -404,27 +410,36 @@ def human(frame, look):
 
     leg(math.pi, 0.72, 1)
     far_hand = arm(math.pi, 0.72, 2, aim=p["attack"] >= 0 and look["gear"] in ("rifle",))
-    if "back" in look:
+    if "back" in look and not back:
         look["back"](c, cx, bob, p)
     # torso
     c.capsule((cx, 19 + bob), (cx, 26 + bob), 4.2, 3.8, shirt, 3)
-    c.line((cx + 0.5, 18 + bob), (cx + 0.5, 25 + bob), shirt.ramp[1])  # placket
+    if back:
+        if "back" in look:  # seen from behind, the backpack is in front
+            look["back"](c, cx, bob, p)
+    else:
+        c.line((cx + 0.5, 18 + bob), (cx + 0.5, 25 + bob), shirt.ramp[1])  # placket
     if look.get("vest"):
         c.polygon([(cx - 3, 18 + bob), (cx + 3, 18 + bob), (cx + 3.5, 26 + bob), (cx - 3.5, 26 + bob)], look["vest"], normal=(-0.2, -0.2, 1), group=3)
     c.capsule((cx - 3.5, 26.5 + bob), (cx + 3.5, 26.5 + bob), 1.0, 1.0, BOOT, 3)  # belt
-    if "front" in look:
+    if "front" in look and not back:
         look["front"](c, cx, bob, p)
     leg(0.0, 1.0, 4)
     # head & face
     hy = 11 + bob
     c.capsule((cx + 0.5, hy + 2), (cx + 0.5, hy + 5), 1.4, 1.4, SKIN, 5, shade=0.8)  # neck
     c.ellipse(cx + 0.5, hy, 3.4, 3.8, SKIN, group=5)
-    c.pixel(cx + 2.4, hy - 0.4, "#1a1208")  # eye
-    c.pixel(cx + 2.4, hy - 1.3, "#4a2a18")  # brow
-    c.pixel(cx + 3.6, hy + 0.6, SKIN.ramp[1])  # nose
-    c.pixel(cx + 2.6, hy + 2.0, "#7a3a2a")  # mouth
-    c.pixel(cx - 0.6, hy + 0.2, SKIN.ramp[1])  # ear
-    if look.get("stubble"):
+    if back:  # back of the head: hair and an ear
+        c.ellipse(cx - 0.2, hy + 0.4, 3.0, 2.6, Mat(["#1a1008", "#3a2414", "#5a3a20"]), group=5)
+        c.pixel(cx + 2.6, hy + 0.4, SKIN.ramp[1])
+    else:
+        c.pixel(cx + 2.4, hy - 0.4, "#1a1208")  # eye
+        c.pixel(cx + 2.4, hy - 1.3, "#4a2a18")  # brow
+        c.pixel(cx + 0.6, hy - 0.4, "#1a1208")  # second eye (3/4 view)
+        c.pixel(cx + 3.6, hy + 0.6, SKIN.ramp[1])  # nose
+        c.pixel(cx + 2.6, hy + 2.0, "#7a3a2a")  # mouth
+        c.pixel(cx - 0.6, hy + 0.2, SKIN.ramp[1])  # ear
+    if look.get("stubble") and not back:
         c.pixel(cx + 1.6, hy + 2.4, "#5a3a2a")
         c.pixel(cx + 0.6, hy + 2.2, "#5a3a2a")
     look["hat_fn"](c, cx, hy, hat)
@@ -468,9 +483,9 @@ def human(frame, look):
     return c.finish()
 
 
-def human_dead(frame, look, dead):
+def human_dead(frame, look, dead, view="side"):
     w, h = 28, 44
-    c = ScaledCanvas(w, h, 1.25)
+    c = view_canvas(w, h, 1.25, view, 12)
     ground = h - 4
     if dead == 1:
         c.capsule((8, ground - 6), (16, ground - 12), 3.8, 3.5, look["shirt"], 1)
@@ -569,10 +584,10 @@ TYRE = Mat(["#0a0a0a", "#1c1c1c", "#2e2e30", "#444448"])
 GLASS = Mat(["#1a3040", "#2e5a6e", "#5a94a8", "#a8dce8"], spec=1.0)
 
 
-def jeep(frame):
+def jeep(frame, view="side"):
     w, h = 70, 48
     p = pose(frame)
-    c = ScaledCanvas(w, h, 1.2)
+    c = view_canvas(w, h, 1.2, view, 32)
     ground = h - 3
     dead = p["dead"]
     bob = (math.sin(p["phase"] * 2) * 0.8) if p["walk"] else 0
@@ -628,13 +643,18 @@ def jeep(frame):
     return c.finish()
 
 
+VIEWS = ("front", "back")  # sheet rows: 0 = heading down-right, 1 = heading up-right
+
+
 def make_sheet(fn, *args):
+    """FRAMES columns x 2 rows (front 3/4, back 3/4), all facing right."""
     from PIL import Image
-    frames = [fn(f, *args) for f in range(FRAMES)]
-    w, h = frames[0].size
-    sheet = Image.new("RGBA", (w * FRAMES, h), (0, 0, 0, 0))
-    for i, fr in enumerate(frames):
-        sheet.paste(fr, (i * w, 0))
+    rows = [[fn(f, *args, view=v) for f in range(FRAMES)] for v in VIEWS]
+    w, h = rows[0][0].size
+    sheet = Image.new("RGBA", (w * FRAMES, h * len(VIEWS)), (0, 0, 0, 0))
+    for r, frames in enumerate(rows):
+        for i, fr in enumerate(frames):
+            sheet.paste(fr, (i * w, r * h))
     return sheet
 
 

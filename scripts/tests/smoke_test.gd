@@ -114,9 +114,9 @@ func _ready() -> void:
 		_check(home.damage_fx.level == 2 and home.damage_fx.parts.size() > 0, "a badly damaged building burns and smokes")
 		home.hp = home.max_hp
 	var rubble0 := get_tree().get_nodes_in_group("rubble").size()
-	var tower = game.find_building("poacher", "poacher_tower")
-	if tower != null:
-		tower.take_damage(1e6, null)
+	var ptower = game.find_building("poacher", "poacher_tower")
+	if ptower != null:
+		ptower.take_damage(1e6, null)
 		_check(get_tree().get_nodes_in_group("rubble").size() > rubble0, "a destroyed building leaves rubble")
 
 	# --- victory --------------------------------------------------------------

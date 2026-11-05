@@ -632,17 +632,29 @@ def ground_textures():
     g = quantise(n1 * 0.7 + n2 * 0.3, ["#34501c", "#3e5e20", "#486c26", "#547a2c", "#608632"], 0.9)
     _blades(g, rnd, 380, ["#6a9638", "#76a240", "#36561c", "#82ac48"], 2, 4)
     _blades(g, rnd, 40, ["#a2c45c", "#b8d070"], 2, 3)
+    _blobs(g, rnd, 10, [("#4a7a2a", "#68983a")], (2.5, 4.0), (1.4, 2.2))  # clover patches
+    _blobs(g, rnd, 8, [("#5e5a50", "#9a968a")], (0.8, 1.4), (0.6, 0.9))  # stones
+    for _ in range(6):  # tiny white flowers
+        x, y = rnd.integers(0, TEX), rnd.integers(0, TEX)
+        g[y, x] = hexrgb("#f4f0e0")
     out["grass"] = g
 
     j = quantise(n2 * 0.6 + n1 * 0.4, ["#1c2a12", "#243616", "#2e441a", "#38501e", "#445c24"], 0.9)
     _blobs(j, rnd, 70, [("#4a3a1c", "#6a5428"), ("#3a4a18", "#566a22"), ("#2a2412", "#423a1c")], (1.5, 3.5), (1, 2))
     _blades(j, rnd, 160, ["#3e6a22", "#4c7e28", "#24401a"], 2, 4)
+    _blobs(j, rnd, 16, [("#5a3a1a", "#8a5a2a")], (0.8, 1.2), (0.6, 0.9))  # seeds
+    for _ in range(6):  # surface roots
+        x, y = rnd.uniform(0, TEX), rnd.uniform(0, TEX)
+        a = rnd.uniform(0, math.pi)
+        for t in range(10):
+            j[int(y + math.sin(a) * t * 0.5) % TEX, int(x + math.cos(a) * t) % TEX] = hexrgb("#3a2a14")
     out["jungle"] = j
 
     yy, xx = np.mgrid[0:TEX, 0:TEX]
     ripple = (np.sin((yy + n1 * 10) * (2 * math.pi / 8) + xx * (2 * math.pi / 64)) + 1) / 2
     s = quantise(0.45 + ripple * 0.25 + (n2 - 0.5) * 0.4, ["#b89c5c", "#c8ae6c", "#d6be7c", "#e2cc8c", "#ecd89c"], 0.8)
     _blobs(s, rnd, 14, [("#a08a5a", "#f4ecd8"), ("#8a7a5a", "#c8b898")], (0.8, 1.6), (0.6, 1.0))
+    _blobs(s, rnd, 3, [("#7a6248", "#a88a66")], (3.0, 4.5), (0.7, 1.0))  # driftwood
     out["sand"] = s
 
     d = quantise(n1 * 0.6 + n2 * 0.4, ["#4e3a22", "#5e482a", "#6e5634", "#7e643c", "#8e7246"], 0.9)
@@ -671,3 +683,249 @@ def ground_textures():
 
     noise = (tile_noise(TEX, 4, 9, 4) * 255).astype(np.uint8)
     return {k: Image.fromarray(v, "RGB") for k, v in out.items()}, Image.fromarray(noise, "L")
+
+
+# ---------------------------------------------------------------------------
+# More jungle: plants, clutter, shoreline and water decor
+# ---------------------------------------------------------------------------
+FROND = Mat(["#0e2a10", "#1a4418", "#286022", "#3a7e2c", "#509c38", "#6eb848"])
+FERN = Mat(["#10300e", "#1c4c16", "#2c6a20", "#40882a", "#58a636", "#7ac44a"])
+NEEDLE = Mat(["#081a10", "#0e2a18", "#163c20", "#20502a", "#2e6634", "#407e40"])
+WOOD_CUT = Mat(["#4a3018", "#7a5228", "#a8783c", "#cca058", "#e4c27a"])
+BONE_M = Mat(["#6a6450", "#a8a088", "#d4ccb2", "#eee8d6", "#fffcf0"])
+CAP_RED = Mat(["#4a0a08", "#8a1a10", "#c02a1a", "#e8503a"])
+CAP_TAN = Mat(["#4a3018", "#7a5430", "#a87a48", "#d0a466"])
+STEM = Mat(["#8a8270", "#c8c0a8", "#ece6d4"])
+LILY = Mat(["#0e3018", "#1a4a22", "#2a6a2e", "#3e8a3a", "#58a84c"])
+REED = Mat(["#2a3a14", "#46601e", "#66842a", "#88a43a"])
+CATTAIL = Mat(["#2a160a", "#4a2a14", "#6e4222"])
+
+
+def _frond(c, base, ang, length, droop, mat, group, shade=1.0, leaflet=4.0, lift=8.0):
+    pts = []
+    for j in range(8):
+        t = j / 7
+        pts.append((base[0] + math.cos(ang) * length * t,
+                    base[1] + math.sin(ang) * length * 0.45 * t - math.sin(t * math.pi * 0.85) * lift + t * t * droop))
+    for j in range(1, 8):
+        px, py = pts[j]
+        dx, dy = pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]
+        n = math.hypot(dx, dy) + 1e-6
+        ox, oy = -dy / n, dx / n
+        L = leaflet * math.sin((j / 8) * math.pi) + 1.0
+        for side, sh in ((1, 1.0), (-1, 0.8)):
+            c.capsule((px, py), (px + ox * L * side + dx / n * 2, py + oy * L * side + 2.5), 0.9, 0.4, mat, group, shade * sh)
+    c.chain(pts, [1.2, 1.1, 1.0, 0.9, 0.8, 0.6, 0.5, 0.3], mat, group, shade * 1.1)
+
+
+def cycad(seed):
+    rnd = np.random.default_rng(seed)
+    w, h = 80, 80
+    c = Canvas(w, h)
+    bx = w // 2 - 4
+    top = (bx, h - 26)
+    c.capsule((bx, h - 7), top, 6.5, 5.5, BARK, 1,
+              pattern=lambda xx, yy, nx, ny: np.where(((xx + yy * 1.5).astype(int) % 4 == 0) | ((xx - yy * 1.5).astype(int) % 4 == 0), -1, 0))
+    fronds = sorted(range(12), key=lambda k: math.sin(math.radians(k * 30)))
+    for k in fronds:
+        a = math.radians(k * 30 + rnd.uniform(-8, 8))
+        back = math.sin(a) < -0.2
+        _frond(c, top, a, rnd.uniform(18, 24), 4, FROND, 2 + k, 0.65 if back else 1.0, leaflet=3.5, lift=12)
+    c.ellipse(top[0], top[1] - 2, 3.5, 4.5, Mat(["#4a2a08", "#8a5418", "#c08030", "#e8b050"]), group=20,
+              pattern=lambda xx, yy, nx, ny: np.where((yy.astype(int) % 2) == 0, -1, 0))
+    return drop_shadow(c.finish(), dx=6, dy=0, squash=0.3, alpha=90)
+
+
+def giant_fern(seed):
+    rnd = np.random.default_rng(seed)
+    w, h = 96, 116
+    c = Canvas(w, h)
+    bx = w // 2 - 4
+    lean = rnd.uniform(-5, 5)
+    pts = [(bx + lean * (t / 6) ** 2, h - 6 - t * 9) for t in range(7)]
+    c.chain(pts, [3.8, 3.5, 3.3, 3.1, 2.9, 2.8, 2.8], BARK, 1,
+            pattern=lambda xx, yy, nx, ny: np.where((yy.astype(int) % 3 == 0) & (xx.astype(int) % 2 == 0), -1, 0))
+    top = pts[-1]
+    order = sorted(range(11), key=lambda k: math.sin(math.radians(k * 33)))
+    for k in order:
+        a = math.radians(k * 33 + rnd.uniform(-10, 10))
+        back = math.sin(a) < -0.2
+        _frond(c, top, a, rnd.uniform(30, 38), 16, FERN, 2 + k, 0.62 if back else 1.0, leaflet=5.0, lift=9)
+    for k in range(3):  # unfurling fiddleheads
+        fx, fy = top[0] - 3 + k * 3, top[1] - 5
+        c.ellipse(fx, fy, 1.6, 1.6, FERN, group=30)
+    return drop_shadow(c.finish(), dx=8, dy=0, squash=0.3, alpha=90)
+
+
+def conifer(seed):
+    rnd = np.random.default_rng(seed)
+    w, h = 84, 128
+    c = Canvas(w, h)
+    bx = w // 2 - 4
+    c.capsule((bx, h - 6), (bx, 14), 3.6, 1.6, BARK, 1)
+    tiers = 7
+    for i in range(tiers):
+        y = h - 34 - i * 12
+        span = 24 - i * 2.6 + rnd.uniform(-2, 2)
+        for side in (-1, 1):
+            tip = (bx + side * span, y + 3)
+            c.capsule((bx, y - 1), tip, 1.0, 0.6, BARK, 2 + i, shade=0.8)
+            for t in np.linspace(0.15, 1.0, 6):  # needle tufts along each branch
+                px, py = bx + side * span * t, y - 1 + 4 * t
+                c.ellipse(px, py, 4.5 - t * 1.5, 2.8, NEEDLE, group=2 + i, shade=0.85 + 0.25 * (i / tiers),
+                          pattern=speckle(int(px * 7 + py), 0.25, -1))
+    c.ellipse(bx, 14, 4, 6, NEEDLE, group=20, pattern=speckle(seed, 0.25, -1))
+    return drop_shadow(c.finish(), dx=8, dy=0, squash=0.28, alpha=90)
+
+
+def vine_tree(seed):
+    rnd = np.random.default_rng(seed + 500)
+    base = tree(seed)  # already has its shadow
+    w, h = base.size
+    c = Canvas(w, h)
+    flower = ["#e84a8a", "#ff9ac0", "#f0d040"]
+    for k in range(5):
+        x0 = rnd.uniform(20, 70)
+        y0 = rnd.uniform(52, 62)
+        length = rnd.uniform(18, 34)
+        pts = [(x0 + math.sin(t * 2.2 + k) * 2.5, y0 + t * length) for t in np.linspace(0, 1, 6)]
+        c.chain(pts, [0.9, 0.9, 0.8, 0.7, 0.6, 0.5], Mat(["#14280e", "#24421a", "#386026"]), 1 + k)
+        for j, (px, py) in enumerate(pts[1:]):
+            c.pixel(px + (1.5 if j % 2 else -1.5), py, "#4e8a32")
+            if rnd.random() < 0.3:
+                c.pixel(px, py + 1, flower[rnd.integers(0, 3)])
+    out = base.copy()
+    out.alpha_composite(c.finish(outline=False))
+    return out
+
+
+def stump(seed):
+    c = Canvas(40, 32)
+    sh = ShadowLayer(40, 32)
+    sh.blob(23, 26, 12, 4)
+    for dx in (-7, 7):
+        c.capsule((18, 24), (18 + dx, 28), 2.6, 1.2, BARK, 1)
+    c.capsule((18, 27), (18, 16), 7.5, 7.0, BARK, 1, pattern=lambda xx, yy, nx, ny: np.where(np.sin(xx * 2.0) > 0.6, -1, 0))
+    c.ellipse(18, 15, 7.5, 3.4, WOOD_CUT, group=1, round_=0.2,
+              pattern=lambda xx, yy, nx, ny: np.where(np.hypot(xx - 18, (yy - 15) * 2.2).astype(int) % 2 == 0, -1, 0))
+    c.ellipse(13, 21, 3, 2, MOSS, round_=0.6)
+    img = sh.image(90)
+    img.alpha_composite(c.finish())
+    return img
+
+
+def log(seed):
+    rnd = np.random.default_rng(seed)
+    c = Canvas(72, 40)
+    sh = ShadowLayer(72, 40)
+    a, b = (12, 14), (58, 28)
+    sh.prism([(a[0], a[1] + 6), (b[0], b[1] + 6)], 8, 0.6, -0.1)
+    c.capsule(a, b, 6.5, 6.0, BARK, 1, pattern=lambda xx, yy, nx, ny: np.where(np.sin((xx * 0.3 - yy) * 1.8) > 0.7, -1, 0))
+    c.ellipse(b[0] + 1, b[1] + 0.5, 3.5, 6.0, WOOD_CUT, rot=-15, group=2, round_=0.2,
+              pattern=lambda xx, yy, nx, ny: np.where(np.hypot((xx - b[0]) * 1.7, yy - b[1]).astype(int) % 2 == 0, -1, 0))
+    for k in range(3):
+        t = rnd.uniform(0.15, 0.8)
+        c.ellipse(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - 5, 4, 2, MOSS, group=3, round_=0.6)
+    for k in range(2):  # shelf fungus
+        t = rnd.uniform(0.3, 0.7)
+        c.ellipse(a[0] + (b[0] - a[0]) * t + 2, a[1] + (b[1] - a[1]) * t + 3, 2.5, 1.2, CAP_TAN, group=4)
+    img = sh.image(90)
+    img.alpha_composite(c.finish())
+    return img
+
+
+def mushrooms(seed):
+    rnd = np.random.default_rng(seed)
+    c = Canvas(24, 18)
+    cap = CAP_RED if seed % 3 == 0 else CAP_TAN
+    for k in range(rnd.integers(3, 5)):
+        x = 12 + rnd.uniform(-7, 7)
+        hgt = rnd.uniform(4, 8)
+        c.capsule((x, 15), (x, 15 - hgt), 0.9, 0.8, STEM, k)
+        r = rnd.uniform(2.0, 3.2)
+        c.ellipse(x, 15 - hgt, r, r * 0.65, cap, group=k, belly_t=0.9)
+        if cap is CAP_RED:
+            c.pixel(x - 1, 15 - hgt - 0.6, "#fff4e8")
+            c.pixel(x + 1, 15 - hgt - 0.2, "#fff4e8")
+    return c.finish()
+
+
+def bones(seed):
+    c = Canvas(44, 26)
+    sh = ShadowLayer(44, 26)
+    sh.blob(24, 20, 16, 4)
+    for k in range(5):  # ribs
+        x = 10 + k * 5
+        c.chain([(x, 20), (x + 2, 12 - abs(k - 2)), (x + 5, 9 - abs(k - 2))], [1.1, 1.0, 0.7], BONE_M, 1 + k)
+    c.capsule((8, 20), (36, 20), 1.4, 1.2, BONE_M, 10)  # spine
+    c.ellipse(38, 18, 4.5, 3.2, BONE_M, group=11)  # skull
+    c.pixel(39, 17.5, "#3a3428")
+    c.capsule((39, 20), (44, 21), 1.0, 0.6, BONE_M, 11)
+    img = sh.image(80)
+    img.alpha_composite(c.finish())
+    return img
+
+
+def pebbles(seed):
+    rnd = np.random.default_rng(seed)
+    c = Canvas(24, 14)
+    for k in range(rnd.integers(3, 6)):
+        r = rnd.uniform(1.2, 2.6)
+        c.ellipse(12 + rnd.uniform(-8, 8), 9 + rnd.uniform(-3, 3), r * 1.3, r, ROCK, round_=0.8)
+    return c.finish()
+
+
+def fern_small(seed):
+    rnd = np.random.default_rng(seed)
+    c = Canvas(40, 28)
+    for k in range(7):
+        a = math.radians(190 + k * 26 + rnd.uniform(-8, 8))
+        _frond(c, (20, 24), a, rnd.uniform(10, 14), 6, FERN, k, 0.85 + 0.15 * (k % 2), leaflet=2.4, lift=6)
+    return drop_shadow(c.finish(), dx=3, dy=0, squash=0.25, alpha=70)
+
+
+def reeds(seed):
+    rnd = np.random.default_rng(seed)
+    c = Canvas(28, 38)
+    for k in range(9):
+        x0 = 14 + rnd.uniform(-8, 8)
+        hgt = rnd.uniform(16, 30)
+        lean = rnd.uniform(-4, 4)
+        top = (x0 + lean, 35 - hgt)
+        c.capsule((x0, 35), top, 0.7, 0.4, REED, k, shade=0.8 + 0.2 * (k % 2))
+        if rnd.random() < 0.45:
+            c.capsule((top[0] - lean * 0.08, top[1] + 2), (top[0] - lean * 0.15, top[1] + 6), 1.3, 1.3, CATTAIL, k)
+    return c.finish()
+
+
+def water_rock(seed):
+    rnd = np.random.default_rng(seed)
+    c = Canvas(44, 30)
+    specs = [(20, 18, 11, 8), (30, 21, 6, 4.5)] if seed % 2 else [(22, 18, 12, 7), (12, 22, 5, 3.5)]
+    for x, y, rx, ry in specs:
+        c.ellipse(x, y, rx, ry, ROCK, round_=0.85, pattern=speckle(int(x * 3 + y), 0.08, -1),
+                  clip=lambda xx, yy, y=y, ry=ry: yy < y + ry * 0.45)
+        c.ellipse(x - rx * 0.2, y - ry * 0.5, rx * 0.55, ry * 0.3, MOSS, round_=0.6)
+    img = c.finish()
+    # foam ring at the waterline
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(img)
+    for x, y, rx, ry in specs:
+        d.arc([x - rx - 2, y + ry * 0.45 - 3, x + rx + 2, y + ry * 0.45 + 3], 0, 180, fill=(232, 244, 240, 255))
+    return img
+
+
+def lily(seed):
+    rnd = np.random.default_rng(seed)
+    c = Canvas(48, 22)
+    for k in range(rnd.integers(3, 6)):
+        x, y = 24 + rnd.uniform(-14, 14), 12 + rnd.uniform(-4, 4)
+        r = rnd.uniform(4.5, 7.0)
+        notch = rnd.uniform(0, math.tau)
+        c.ellipse(x, y, r, r * 0.5, LILY, group=k, round_=0.3,
+                  clip=lambda xx, yy, x=x, y=y, n=notch: np.abs(((np.arctan2((yy - y) * 2, xx - x) - n + math.pi) % math.tau) - math.pi) > 0.35)
+    if seed % 2 == 0:
+        fx, fy = 24 + rnd.uniform(-8, 8), 10
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 0)):
+            c.pixel(fx + dx, fy + dy, "#ff9ac0" if (dx, dy) != (0, 0) else "#ffe080")
+    return c.finish()

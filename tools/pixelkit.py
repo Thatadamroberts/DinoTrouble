@@ -376,3 +376,80 @@ def quantise(values, ramp, dither=0.6):
     thr = 0.5 + (BAYER[yy % 4, xx % 4] - 0.5) * dither
     idx = np.clip((base + ((t - base) > thr)).astype(int), 0, n - 1)
     return ramp[idx].astype(np.uint8)
+
+
+class ScaledCanvas:
+    """Draws a rig authored in base units onto a k-times bigger canvas.
+
+    Shapes scale with k so they gain pixels for detail, while pixel()/line()
+    stay 1 px wide, which keeps eyes, teeth and claws crisp."""
+
+    def __init__(self, w, h, k):
+        self.k = k
+        self.c = Canvas(int(round(w * k)), int(round(h * k)))
+
+    def _pat(self, pattern):
+        if pattern is None:
+            return None
+        k = self.k
+        return lambda xx, yy, nx, ny: pattern(xx / k, yy / k, nx, ny)
+
+    def _clip(self, clip):
+        if clip is None:
+            return None
+        k = self.k
+        return lambda xx, yy: clip(xx / k, yy / k)
+
+    @property
+    def n(self):
+        return self.c.n
+
+    def ellipse(self, cx, cy, rx, ry, mat, rot=0.0, group=None, shade=1.0, pattern=None, round_=1.0, belly_t=0.35, clip=None):
+        k = self.k
+        self.c.ellipse(cx * k, cy * k, rx * k, ry * k, mat, rot, group, shade, self._pat(pattern), round_, belly_t, self._clip(clip))
+
+    def capsule(self, p0, p1, r0, r1, mat, group=None, shade=1.0, pattern=None, belly_t=0.35):
+        k = self.k
+        self.c.capsule((p0[0] * k, p0[1] * k), (p1[0] * k, p1[1] * k), r0 * k, r1 * k, mat, group, shade, self._pat(pattern), belly_t)
+
+    def chain(self, pts, radii, mat, group=None, shade=1.0, pattern=None, belly_t=0.35):
+        g = group if group is not None else self.c.n
+        for i in range(len(pts) - 1):
+            self.capsule(pts[i], pts[i + 1], radii[i], radii[i + 1], mat, g, shade, pattern, belly_t)
+
+    def polygon(self, pts, mat, normal=(0.0, -0.3, 0.95), group=None, shade=1.0, pattern=None, flat=None):
+        k = self.k
+        self.c.polygon([(x * k, y * k) for x, y in pts], mat, normal, group, shade, self._pat(pattern), flat)
+
+    def pixel(self, x, y, color, group=-2):
+        self.c.pixel(x * self.k, y * self.k, color, group)
+
+    def line(self, p0, p1, color):
+        k = self.k
+        self.c.line((p0[0] * k, p0[1] * k), (p1[0] * k, p1[1] * k), color)
+
+    def finish(self, outline=True, inner=True):
+        return self.c.finish(outline, inner)
+
+
+def scales(seed=0, shift=-1, density=1.0):
+    """Small offset-row scale pattern (reads as reptile skin)."""
+    rnd = np.random.default_rng(seed)
+
+    def f(xx, yy, nx, ny):
+        xi = np.floor(xx * 1.6).astype(int)
+        yi = np.floor(yy * 1.6).astype(int)
+        row = yi // 2
+        m = ((xi + (row % 2) * 2) % 4 == 0) & (yi % 2 == 0)
+        if density < 1.0:
+            m &= rnd.random(xx.shape) < density
+        return np.where(m, shift, 0)
+    return f
+
+
+def wrinkles(freq=1.4, shift=-1, axis_x=True):
+    """Thin skin folds running across the body."""
+    def f(xx, yy, nx, ny):
+        v = np.sin((xx if axis_x else yy) * freq + np.sin((yy if axis_x else xx) * 0.5) * 1.5)
+        return np.where(v > 0.92, shift, 0)
+    return f

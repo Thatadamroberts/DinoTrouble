@@ -139,12 +139,27 @@ func _build_map() -> void:
 ## and how strongly it sways in the wind.
 const DECOR_STYLE := {
 	"tree": {"base": 6, "x": 4, "sway": 1.0},
+	"vtree": {"base": 6, "x": 4, "sway": 1.0},
 	"palm": {"base": 6, "x": 4, "sway": 2.0},
+	"giant_fern": {"base": 6, "x": 4, "sway": 1.6},
+	"cycad": {"base": 6, "x": 4, "sway": 0.8},
+	"conifer": {"base": 6, "x": 4, "sway": 0.8},
+	"stump": {"base": 4, "x": 2, "sway": 0.0},
+	"log": {"base": 6, "x": 0, "sway": 0.0},
 	"bush": {"base": 3, "x": 0, "sway": 1.0},
+	"fern_small": {"base": 3, "x": 0, "sway": 1.0},
 	"boulder": {"base": 4, "x": 0, "sway": 0.0},
 	"tuft": {"base": 2, "x": 0, "sway": 1.0},
 	"flowers": {"base": 2, "x": 0, "sway": 1.0},
+	"mushrooms": {"base": 2, "x": 0, "sway": 0.0},
+	"pebbles": {"base": 3, "x": 0, "sway": 0.0},
+	"bones": {"base": 4, "x": 0, "sway": 0.0},
+	"reeds": {"base": 2, "x": 0, "sway": 1.5},
+	"water_rock": {"base": 8, "x": 0, "sway": 0.0},
+	"lily": {"base": 6, "x": 0, "sway": 0.0},
 }
+## Flat decor drawn under units instead of depth-sorted with them.
+const GROUND_DECOR := ["tuft", "flowers", "mushrooms", "pebbles", "bones", "lily", "water_rock"]
 
 
 func _spawn_decor() -> void:
@@ -160,7 +175,7 @@ func _spawn_decor() -> void:
 		var s := Sprite2D.new()
 		var tex: Texture2D = textures[key]
 		s.texture = tex
-		var walkable: bool = kind in ["bush", "tuft", "flowers"]
+		var walkable: bool = MapScript.WALKABLE_DECOR.has(kind)
 		var jitter := Vector2(randf_range(-12, 12), randf_range(-6, 6)) if walkable else Vector2(randf_range(-4, 4), randf_range(-2, 2))
 		s.position = Iso.tile_to_world(d["tile"]) + jitter
 		s.offset = Vector2(float(style["x"]), -tex.get_height() / 2.0 + float(style["base"]))
@@ -173,7 +188,7 @@ func _spawn_decor() -> void:
 				m.set_shader_parameter("speed", 1.1 + amount * 0.2)
 				materials[amount] = m
 			s.material = materials[amount]
-		if kind in ["tuft", "flowers"]:
+		if GROUND_DECOR.has(kind):
 			s.z_index = -1  # always under units walking through them
 			ground_decor.add_child(s)
 		else:

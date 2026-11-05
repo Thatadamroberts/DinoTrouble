@@ -140,6 +140,16 @@ def gen_world():
         save(world_art.boulder(50 + v), f"decor/boulder_{v}.png")
     for v in range(4):
         save(world_art.flowers(v), f"decor/flowers_{v}.png")
+    extra = {
+        "vtree": (world_art.vine_tree, 2, 60), "cycad": (world_art.cycad, 2, 70), "giant_fern": (world_art.giant_fern, 2, 80),
+        "conifer": (world_art.conifer, 2, 90), "stump": (world_art.stump, 2, 100), "log": (world_art.log, 2, 110),
+        "mushrooms": (world_art.mushrooms, 3, 120), "bones": (world_art.bones, 2, 130), "pebbles": (world_art.pebbles, 3, 140),
+        "fern_small": (world_art.fern_small, 2, 150), "reeds": (world_art.reeds, 3, 160), "water_rock": (world_art.water_rock, 2, 170),
+        "lily": (world_art.lily, 3, 180),
+    }
+    for name, (fn, count, seed) in extra.items():
+        for v in range(count):
+            save(fn(seed + v), f"decor/{name}_{v}.png")
     textures, noise = world_art.ground_textures()
     for name, img in textures.items():
         save(img, f"terrain/{name}.png")

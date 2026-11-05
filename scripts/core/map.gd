@@ -4,8 +4,27 @@ extends RefCounted
 enum T { WATER, SAND, GRASS, JUNGLE, DIRT, ROCK }
 
 const TILE_NAMES := ["water", "sand", "grass", "jungle", "dirt", "rock"]
-const DECOR_VARIANTS := {"tree": 3, "palm": 2, "bush": 2, "boulder": 2, "tuft": 3, "flowers": 4}
-const WALKABLE_DECOR := ["bush", "tuft", "flowers"]
+const DECOR_VARIANTS := {
+	"tree": 3, "vtree": 2, "palm": 2, "giant_fern": 2, "cycad": 2, "conifer": 2, "stump": 2, "log": 2,
+	"bush": 2, "fern_small": 2, "boulder": 2, "tuft": 3, "flowers": 4, "mushrooms": 3, "pebbles": 3,
+	"bones": 2, "reeds": 3, "water_rock": 2, "lily": 3,
+}
+## Decor that does not block movement (water decor sits on unwalkable water anyway).
+const WALKABLE_DECOR := ["bush", "fern_small", "tuft", "flowers", "mushrooms", "pebbles", "bones", "reeds", "water_rock", "lily"]
+## Per-terrain decor odds as [name, cumulative probability], checked in order.
+const DECOR_TABLE := {
+	T.JUNGLE: [["tree", 0.18], ["vtree", 0.26], ["palm", 0.31], ["giant_fern", 0.37], ["cycad", 0.41], ["conifer", 0.43],
+		["log", 0.45], ["stump", 0.46], ["bush", 0.58], ["fern_small", 0.66], ["mushrooms", 0.70], ["tuft", 0.76]],
+	T.GRASS: [["tree", 0.022], ["conifer", 0.03], ["cycad", 0.038], ["palm", 0.05], ["vtree", 0.055], ["stump", 0.06], ["log", 0.065],
+		["boulder", 0.075], ["bush", 0.10], ["fern_small", 0.11], ["tuft", 0.24], ["flowers", 0.28], ["pebbles", 0.30],
+		["mushrooms", 0.31], ["bones", 0.312]],
+	T.SAND: [["palm", 0.05], ["pebbles", 0.08], ["bones", 0.083]],
+	T.DIRT: [["boulder", 0.03], ["pebbles", 0.08], ["tuft", 0.11], ["bones", 0.115]],
+	T.ROCK: [["boulder", 0.04], ["pebbles", 0.10], ["tuft", 0.12]],
+}
+const SHORE_TABLE := [["reeds", 0.2], ["palm", 0.26], ["pebbles", 0.3]]
+const WATER_TABLE := [["lily", 0.07], ["water_rock", 0.11]]
+const CLEAR_TABLE := [["tuft", 0.06], ["flowers", 0.08], ["pebbles", 0.09]]
 
 var size := 64
 var tiles := PackedByteArray()
@@ -177,52 +196,41 @@ func _place_decor(rng: RandomNumberGenerator) -> void:
 			var t := Vector2i(x, y)
 			var i := idx(t)
 			var kind: int = tiles[i]
-			if kind == T.WATER:
-				continue
 			var r := rng.randf()
 			var kind_name := ""
-			if clear[i] != 0:
-				# open ground keeps only a little low, walkable greenery
-				if kind == T.GRASS and r < 0.08:
-					kind_name = "tuft" if r < 0.06 else "flowers"
+			if kind == T.WATER:
+				if _touches(t, true):
+					kind_name = _pick(WATER_TABLE, r)
+			elif clear[i] != 0:
+				# open ground keeps only a little low, walkable clutter
+				if kind == T.GRASS:
+					kind_name = _pick(CLEAR_TABLE, r)
+			elif kind == T.SAND and _touches(t, false):
+				kind_name = _pick(SHORE_TABLE, r)
 			else:
-				match kind:
-					T.JUNGLE:
-						if r < 0.30:
-							kind_name = "tree"
-						elif r < 0.42:
-							kind_name = "palm"
-						elif r < 0.60:
-							kind_name = "bush"
-						elif r < 0.72:
-							kind_name = "tuft"
-					T.GRASS:
-						if r < 0.03:
-							kind_name = "tree"
-						elif r < 0.05:
-							kind_name = "palm"
-						elif r < 0.09:
-							kind_name = "bush"
-						elif r < 0.10:
-							kind_name = "boulder"
-						elif r < 0.24:
-							kind_name = "tuft"
-						elif r < 0.28:
-							kind_name = "flowers"
-					T.SAND:
-						if r < 0.05:
-							kind_name = "palm"
-					T.DIRT, T.ROCK:
-						if r < 0.03:
-							kind_name = "boulder"
-						elif r < 0.06 and kind == T.DIRT:
-							kind_name = "tuft"
+				kind_name = _pick(DECOR_TABLE.get(kind, []), r)
 			if kind_name == "":
 				continue
 			var variants: int = DECOR_VARIANTS[kind_name]
 			decor.append({"type": kind_name, "tile": t, "variant": rng.randi_range(0, variants - 1)})
 			if not WALKABLE_DECOR.has(kind_name):
 				blocked[i] = 1
+
+
+func _pick(table: Array, r: float) -> String:
+	for e in table:
+		if r < float(e[1]):
+			return e[0]
+	return ""
+
+
+## Water tile next to land (land = true), or land tile next to water (land = false).
+func _touches(t: Vector2i, land: bool) -> bool:
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var q: Vector2i = t + d
+		if in_bounds(q) and (tiles[idx(q)] != T.WATER) == land:
+			return true
+	return false
 
 
 func _setup_astar() -> void:

@@ -6,9 +6,26 @@ has FRAMES columns, all facing right:
 """
 import math
 
-from pixelkit import Canvas, Mat, combine, ik2, speckle, stripes
+import numpy as np
+
+from pixelkit import Canvas, Mat, ScaledCanvas, combine, ik2, scales, speckle, stripes, wrinkles
 
 FRAMES = 13
+CLAW = "#ece6d0"
+
+
+def draw_eye(c, ex, ey, col, dead, brow):
+    """Eye with pupil, a catch-light and a darker brow ridge above it."""
+    if dead == 2:
+        c.pixel(ex, ey, "#2a1a10")
+        c.pixel(ex + 1, ey, "#2a1a10")
+        return
+    c.pixel(ex - 1, ey - 1, brow)
+    c.pixel(ex, ey - 1, brow)
+    c.pixel(ex + 1, ey - 1, brow)
+    c.pixel(ex, ey, col)
+    c.pixel(ex + 1, ey, "#120c06")
+    c.pixel(ex + 0.2, ey - 0.2, "#fffbe8")
 IDLE = (0, 1)
 WALK = tuple(range(2, 8))
 ATTACK = (8, 9, 10)
@@ -43,7 +60,7 @@ def leg_target(hip_x, ground, phase, stride, lift, offset=0.0):
 def biped(w, h, frame, spec):
     p = pose(frame)
     s = spec["scale"]
-    c = Canvas(w, h)
+    c = ScaledCanvas(w, h, spec.get("k", 1.0))
     skin, far_skin = spec["skin"], spec["skin"]
     ground = h - 3
     bob = 0.0
@@ -90,10 +107,14 @@ def biped(w, h, frame, spec):
             c.ellipse(mx, my - 1 * s, L1 * 0.62, spec["thigh_r"] * s, skin, rot=ang, group=tg, shade=shade, pattern=pat)
         else:
             c.capsule((hip[0], hip[1] + 1 * s), knee, spec["thigh_r"] * s, spec["thigh_r"] * 0.6 * s, skin, group, shade)
-        c.capsule(knee, ankle, spec["thigh_r"] * 0.5 * s, 1.3 * s, skin, group, shade)
-        c.capsule(ankle, toe, 1.3 * s, 0.9 * s, skin, group, shade)
+        sr = spec.get("shin_r", (0.5, 1.3, 0.9))
+        c.capsule(knee, ankle, spec["thigh_r"] * sr[0] * s, sr[1] * s, skin, group, shade, pattern=pat)
+        c.capsule(ankle, toe, sr[1] * s, sr[2] * s, skin, group, shade)
+        c.pixel(toe[0] + 1.0, toe[1] - 0.3, CLAW)
+        c.pixel(toe[0] + 0.3, toe[1] + 0.2, CLAW if shade > 0.9 else "#a8a28c")
         if spec.get("sickle"):
-            c.pixel(ankle[0] + 2 * s, ankle[1] + 1, "#ece6d0")
+            c.pixel(ankle[0] + 2 * s, ankle[1] + 1, CLAW)
+            c.pixel(ankle[0] + 2.6 * s, ankle[1] + 0.3, CLAW)
 
     leg(math.pi, 0.72, 1)  # far leg
 
@@ -109,6 +130,7 @@ def biped(w, h, frame, spec):
     if dead:
         neck_top = (nb[0] + spec["neck"][0] * s, ground - spec["head"][1] * s - 1 - (2 * s if dead == 1 else 0))
     c.capsule(nb, neck_top, spec["neck_r"][0] * s, spec["neck_r"][1] * s, skin, 2, pattern=pat)
+    p["nb"], p["neck_top"] = nb, neck_top
 
     hx, hy = neck_top[0] + spec["head"][0] * 0.6 * s, neck_top[1] - 0.5 * s
     head_rot = spec.get("head_rot", 8) + (10 if atk == 1 else 0) - ha
@@ -128,20 +150,25 @@ def biped(w, h, frame, spec):
     hr = math.radians(head_rot)
     snout_end = (hx + math.cos(hr) * spec["snout"] * s, hy + math.sin(hr) * spec["snout"] * s + 0.3 * s)
     c.capsule((hx, hy), snout_end, spec["head"][1] * 0.85 * s, spec["head"][1] * 0.5 * s, skin, 3, belly_t=0.6)
+    lip = spec["head"][1] * 0.5 * s + 0.5
     if jaw > 0.5 * s:
-        for i in range(1, 5):
-            t = i / 5
+        for i in range(1, 7):
+            t = i / 7
             tx = hx + (snout_end[0] - hx) * t
-            c.pixel(tx, hy + (snout_end[1] - hy) * t + spec["head"][1] * 0.5 * s + 0.5, "#f2eedc")
+            c.pixel(tx, hy + (snout_end[1] - hy) * t + lip, "#f2eedc")
+            c.pixel(tx + 0.5, hy + (jaw_end[1] - hy) * t + 0.4, "#e4dcc4")
+    elif spec.get("teeth"):
+        for i in range(2, 7):
+            t = i / 7
+            tx = hx + (snout_end[0] - hx) * t
+            c.pixel(tx, hy + (snout_end[1] - hy) * t + lip + 0.6, "#ece4cc")
+    c.line((hx - 1 * s, hy + lip), (snout_end[0] - 0.5 * s, snout_end[1] + lip * 0.6), spec["skin"].ramp[0])
     # eye
     ex, ey = hx + spec["eye"][0] * s, hy + spec["eye"][1] * s
-    if dead == 2:
-        c.pixel(ex, ey, "#2a1a10")
-    else:
-        c.pixel(ex, ey, spec.get("eye_col", "#f0c020"))
-        c.pixel(ex + 1, ey, "#1a1208")
+    draw_eye(c, ex, ey, spec.get("eye_col", "#f0c020"), dead, spec["skin"].ramp[1])
     c.pixel(snout_end[0] - 1 * s, snout_end[1] - spec["head"][1] * 0.4 * s, spec["skin"].ramp[0])  # nostril
 
+    p["jaw_end"], p["snout_end"] = jaw_end, snout_end
     if "head_extra" in spec:
         spec["head_extra"](c, hx, hy, head_rot, s, p)
 
@@ -153,7 +180,9 @@ def biped(w, h, frame, spec):
     hand = (elbow[0] + ar * 0.5 + swing * 0.3, elbow[1] - ar * 0.1)
     c.capsule(sh, elbow, 1.3 * s, 1.0 * s, skin, 5, shade=0.9)
     c.capsule(elbow, hand, 1.0 * s, 0.7 * s, skin, 5, shade=0.9)
-    c.pixel(hand[0] + 1, hand[1] + 1, "#ece6d0")
+    c.pixel(hand[0] + 1, hand[1] + 1, CLAW)
+    c.pixel(hand[0] + 1.6, hand[1] + 0.2, CLAW)
+    p["hand"], p["elbow"], p["sh"] = hand, elbow, sh
 
     leg(0.0, 1.0, 6)  # near leg
     if "body_extra" in spec:
@@ -162,11 +191,15 @@ def biped(w, h, frame, spec):
 
 
 def crest(c, hx, hy, rot, s, p):
-    red = Mat(["#5a1410", "#8a2418", "#c03a22", "#e86a3a"])
+    red = Mat(["#5a1410", "#8a2418", "#c03a22", "#e86a3a", "#ff9a60"])
+    nt = p.get("neck_top")
+    if nt:  # throat pouch
+        c.ellipse(nt[0] + 1.5 * s, nt[1] + 2.5 * s, 2.6 * s, 2.0 * s, Mat(["#5a4a20", "#9a8a40", "#d0c060", "#ece08a"]), group=6, belly_t=0.9)
     for k, dx in enumerate((-1.0, 1.0)):
         base = (hx - 1 * s + dx * 0.8, hy - 2 * s)
         c.polygon([base, (base[0] + 2 * s, base[1] - 5 * s), (base[0] + 6 * s, base[1] - 3.5 * s), (base[0] + 5 * s, base[1])],
-                  red, normal=(-0.3 + k * 0.4, -0.5, 0.8), group=7 + k)
+                  red, normal=(-0.3 + k * 0.4, -0.5, 0.8), group=7 + k,
+                  pattern=lambda xx, yy, nx, ny: np.where((xx * 1.3 + yy * 0.6).astype(int) % 3 == 0, -1, 0))
     if p["attack"] >= 0:  # neck frill flares open when spitting
         frill = Mat(["#6a3a10", "#b0601a", "#e8a020", "#f8d050"])
         cx, cy = hx - 3 * s, hy + 1 * s
@@ -176,11 +209,21 @@ def crest(c, hx, hy, rot, s, p):
 
 
 def raptor_quills(c, hip, body_c, s, p):
-    q = Mat(["#3a2410", "#6a4420", "#9a6a30"])
-    for i in range(5):
-        x = body_c[0] - 6 * s + i * 3 * s
-        y = body_c[1] - 5.5 * s + abs(i - 2) * 0.6
-        c.capsule((x, y), (x - 2.5 * s, y - 2.2 * s), 0.8, 0.4, q, 11)
+    q = Mat(["#2a180a", "#4e3216", "#7a5226", "#a07034"])
+    for i in range(6):
+        x = body_c[0] - 8 * s + i * 2.8 * s
+        y = body_c[1] - 5.5 * s + abs(i - 2.5) * 0.5
+        c.capsule((x, y), (x - 2.8 * s, y - 2.4 * s), 0.8, 0.35, q, 11)
+    nb, nt = p.get("nb"), p.get("neck_top")
+    if nb and nt:
+        for t in (0.2, 0.45, 0.7):
+            x, y = nb[0] + (nt[0] - nb[0]) * t, nb[1] + (nt[1] - nb[1]) * t - 2.2 * s
+            c.capsule((x, y), (x - 2.4 * s, y - 1.6 * s), 0.7, 0.3, q, 12)
+    el, hd = p.get("elbow"), p.get("hand")
+    if el and hd:
+        for t in (0.3, 0.7):
+            x, y = el[0] + (hd[0] - el[0]) * t, el[1] + (hd[1] - el[1]) * t
+            c.capsule((x, y), (x - 2.0 * s, y + 2.2 * s), 0.6, 0.3, q, 13)
 
 
 RAPTOR = {
@@ -189,8 +232,8 @@ RAPTOR = {
     "neck": (6, 7), "neck_r": (3.6, 2.6), "head": (5, 3.2), "head_rot": 6, "snout": 7, "jaw": 1.6, "jaw_r": 1.4,
     "eye": (1.5, -1.5), "arm": 5, "sickle": True,
     "skin": Mat(["#3e2814", "#6a4a24", "#9a7038", "#c49a58", "#e2c488"], belly=["#6a5a40", "#a89470", "#d8c8a0", "#f0e4c0", "#fff6dc"]),
-    "pattern": combine(stripes(0.9, width=0.22, shift=-1), speckle(3, 0.05)),
-    "body_extra": raptor_quills,
+    "pattern": combine(stripes(0.9, width=0.22, shift=-1), speckle(3, 0.05), scales(1, -1, 0.6)),
+    "body_extra": raptor_quills, "k": 1.3, "teeth": True,
 }
 
 DILO = {
@@ -200,7 +243,7 @@ DILO = {
     "eye": (1.5, -1.2), "arm": 5, "mouth": "#3a6a1a",
     "skin": Mat(["#1e3414", "#365a22", "#58862e", "#84b23e", "#b8d868"], belly=["#5a5a28", "#9a9a48", "#d0c870", "#ece4a0", "#fff8cc"]),
     "pattern": combine(speckle(7, 0.12, -1), stripes(0.7, 1.0, 0.18, shift=-1)),
-    "head_extra": crest,
+    "head_extra": crest, "k": 1.3,
 }
 
 
@@ -210,8 +253,13 @@ TREX_SKIN = Mat(["#16160e", "#2a2a18", "#443f24", "#625a32", "#847744", "#a8985a
 
 def trex_head(c, hx, hy, rot, s, p):
     # heavy jaw muscles and a brow ridge give the skull its boxy look
-    c.ellipse(hx - 3 * s, hy + 1.5 * s, 6.5 * s, 6 * s, TREX_SKIN, rot=rot, group=3, belly_t=0.55)
+    c.ellipse(hx - 3 * s, hy + 1.5 * s, 6.5 * s, 6 * s, TREX_SKIN, rot=rot, group=3, belly_t=0.55,
+              pattern=wrinkles(1.6, -1, axis_x=False))
     c.capsule((hx - 2 * s, hy - 5 * s), (hx + 5 * s, hy - 4.2 * s), 1.6 * s, 1.2 * s, TREX_SKIN, 3, shade=1.1)
+    c.capsule((hx - 5 * s, hy + 6 * s), (hx + 1 * s, hy + 7.5 * s), 2.2 * s, 1.4 * s, TREX_SKIN, 3, shade=0.8,
+              pattern=wrinkles(2.0, -1))  # throat wattle
+    for i in range(4):  # old scar across the snout
+        c.pixel(hx + (5 + i * 1.2) * s, hy - (1.8 - i * 0.7) * s, "#c8a888")
 
 
 TREX = {
@@ -220,8 +268,8 @@ TREX = {
     "neck": (9, 11), "neck_r": (8.0, 6.5), "head": (11, 7.0), "head_rot": 8, "snout": 13, "jaw": 4.5, "jaw_r": 4.0,
     "eye": (0.0, -2.5), "arm": 6, "eye_col": "#f0a010",
     "skin": TREX_SKIN,
-    "pattern": combine(stripes(0.5, 0.5, 0.26, shift=-2), speckle(11, 0.10, -1)),
-    "head_extra": trex_head,
+    "pattern": combine(stripes(0.5, 0.5, 0.26, shift=-2), speckle(11, 0.10, -1), scales(4, -1, 0.7)),
+    "head_extra": trex_head, "k": 1.3, "teeth": True, "shin_r": (0.62, 2.6, 1.6),
 }
 
 
@@ -249,13 +297,13 @@ BONE = Mat(["#6a6450", "#a8a088", "#d8d0b4", "#f4eedc"], spec=0.5)
 def triceratops(frame):
     w, h = 88, 56
     p = pose(frame)
-    c = Canvas(w, h)
+    c = ScaledCanvas(w, h, 1.3)
     ground = h - 3
     dead = p["dead"]
     bob = -abs(math.sin(p["phase"])) * 1.0 if p["walk"] else p["breath"] * 0.5
     sink = {0: 0, 1: 5, 2: 9}[dead]
     bx, by = 38, 31 + bob + sink
-    pat = combine(speckle(5, 0.1, -1), stripes(0.45, 0.0, 0.12, shift=-1))
+    pat = combine(speckle(5, 0.08, -1), stripes(0.45, 0.0, 0.12, shift=-1), scales(7, -1, 0.75), wrinkles(1.1, -1))
     atk = p["attack"]
     push = {0: 1, 1: 4, 2: 2}.get(atk, 0)
 
@@ -272,8 +320,10 @@ def triceratops(frame):
                 lift = max(0, math.cos(p["phase"] + ph_off)) * 3 if p["walk"] else 0
                 top = (lx + (2 if far else 0), by + 6)
                 foot = (lx + dx + (2 if far else 0), ground - 2 - lift)
-            c.capsule(top, foot, 6.0, 4.6, TRIKE_SKIN, g, shade)
+            c.capsule(top, foot, 6.0, 4.6, TRIKE_SKIN, g, shade, pattern=wrinkles(1.7, -1, axis_x=False))
             c.ellipse(foot[0] + 1, foot[1] + 0.5, 4.5, 2.2, TRIKE_SKIN, group=g, shade=shade * 0.85)
+            for t in (-1.5, 1.0, 3.5):  # toenails
+                c.pixel(foot[0] + t, foot[1] + 1.8, CLAW if not far else "#a8a28c")
 
     legs(True)
     # tail
@@ -293,16 +343,15 @@ def triceratops(frame):
     for k in range(7):  # frill rim knobs
         a = math.radians(-160 + k * 30)
         c.ellipse(hx - 2 + math.cos(a) * 10, hy - 4 + math.sin(a) * 11.5, 1.6, 1.6, BONE, group=11)
-    c.ellipse(hx + 4, hy + 2, 8, 6.5, TRIKE_SKIN, rot=12, group=12, belly_t=0.5)
+    c.ellipse(hx + 4, hy + 2, 8, 6.5, TRIKE_SKIN, rot=12, group=12, belly_t=0.5, pattern=scales(9, -1, 0.8))
+    c.capsule((hx + 1, hy + 6), (hx - 2, hy + 9), 1.3, 0.4, BONE, 12)  # cheek horn
     c.polygon([(hx + 9, hy - 1), (hx + 15, hy + 3), (hx + 13, hy + 8), (hx + 8, hy + 7)], BONE, normal=(0.4, -0.2, 0.9), group=13)
     c.capsule((hx + 4, hy - 1), (hx + 16, hy - 11), 1.8, 0.5, BONE, 14)  # brow horns
     c.capsule((hx + 1, hy - 2), (hx + 11, hy - 12), 1.6, 0.5, BONE, 15, shade=0.8)
     c.capsule((hx + 11, hy + 1), (hx + 14, hy - 3), 1.4, 0.5, BONE, 16)  # nose horn
-    if dead == 2:
-        c.pixel(hx + 5, hy, "#2a1a10")
-    else:
-        c.pixel(hx + 5, hy, "#f0c020")
-        c.pixel(hx + 6, hy, "#1a1208")
+    c.line((hx + 13, hy + 5), (hx + 15, hy + 3.5), "#3a3428")  # beak edge
+    c.pixel(hx + 10, hy + 2, "#2a2418")  # nostril
+    draw_eye(c, hx + 5, hy, "#f0c020", dead, "#3a3c2a")
     return c.finish()
 
 
@@ -318,7 +367,7 @@ WOOD = Mat(["#2a1808", "#5a3418", "#8a5428", "#b47a40"])
 def human(frame, look):
     w, h = 28, 44
     p = pose(frame)
-    c = Canvas(w, h)
+    c = ScaledCanvas(w, h, 1.25)
     ground = h - 3
     cx = 12
     dead = p["dead"]
@@ -355,16 +404,29 @@ def human(frame, look):
 
     leg(math.pi, 0.72, 1)
     far_hand = arm(math.pi, 0.72, 2, aim=p["attack"] >= 0 and look["gear"] in ("rifle",))
+    if "back" in look:
+        look["back"](c, cx, bob, p)
     # torso
     c.capsule((cx, 19 + bob), (cx, 26 + bob), 4.2, 3.8, shirt, 3)
+    c.line((cx + 0.5, 18 + bob), (cx + 0.5, 25 + bob), shirt.ramp[1])  # placket
     if look.get("vest"):
         c.polygon([(cx - 3, 18 + bob), (cx + 3, 18 + bob), (cx + 3.5, 26 + bob), (cx - 3.5, 26 + bob)], look["vest"], normal=(-0.2, -0.2, 1), group=3)
     c.capsule((cx - 3.5, 26.5 + bob), (cx + 3.5, 26.5 + bob), 1.0, 1.0, BOOT, 3)  # belt
+    if "front" in look:
+        look["front"](c, cx, bob, p)
     leg(0.0, 1.0, 4)
-    # head
+    # head & face
     hy = 11 + bob
+    c.capsule((cx + 0.5, hy + 2), (cx + 0.5, hy + 5), 1.4, 1.4, SKIN, 5, shade=0.8)  # neck
     c.ellipse(cx + 0.5, hy, 3.4, 3.8, SKIN, group=5)
-    c.pixel(cx + 2.5, hy - 0.5, "#1a1208")
+    c.pixel(cx + 2.4, hy - 0.4, "#1a1208")  # eye
+    c.pixel(cx + 2.4, hy - 1.3, "#4a2a18")  # brow
+    c.pixel(cx + 3.6, hy + 0.6, SKIN.ramp[1])  # nose
+    c.pixel(cx + 2.6, hy + 2.0, "#7a3a2a")  # mouth
+    c.pixel(cx - 0.6, hy + 0.2, SKIN.ramp[1])  # ear
+    if look.get("stubble"):
+        c.pixel(cx + 1.6, hy + 2.4, "#5a3a2a")
+        c.pixel(cx + 0.6, hy + 2.2, "#5a3a2a")
     look["hat_fn"](c, cx, hy, hat)
     gear = look["gear"]
     atk = p["attack"]
@@ -373,12 +435,16 @@ def human(frame, look):
             y = 17.5 + bob
             c.capsule((cx - 2, y + 1), (cx + 4, y), 1.4, 1.2, WOOD, 9)
             c.capsule((cx + 4, y), (cx + 14, y - 0.5), 0.9, 0.7, METAL, 9)
+            if look.get("scope"):
+                c.capsule((cx + 5, y - 1.8), (cx + 9, y - 1.9), 0.8, 0.8, METAL, 9)
             if atk == 0:
                 for d in ((15, -1), (16, 0), (15, 1), (17, -0.5), (16, -2), (16, 1.5)):
                     c.pixel(cx + d[0], y + d[1], "#fff2a0" if d[0] < 17 else "#ffb030")
         else:
             c.capsule((cx - 3, 26 + bob), (cx + 6, 15 + bob), 1.2, 0.8, WOOD, 9)
             c.capsule((cx + 2, 20 + bob), (cx + 8, 12 + bob), 0.8, 0.6, METAL, 9)
+            if look.get("scope"):
+                c.capsule((cx + 3.5, 17 + bob), (cx + 5.5, 14.5 + bob), 0.8, 0.8, METAL, 9)
     elif gear == "wrench":
         if atk >= 0:
             ang = {0: -60, 1: 20, 2: -10}[atk]
@@ -404,7 +470,7 @@ def human(frame, look):
 
 def human_dead(frame, look, dead):
     w, h = 28, 44
-    c = Canvas(w, h)
+    c = ScaledCanvas(w, h, 1.25)
     ground = h - 4
     if dead == 1:
         c.capsule((8, ground - 6), (16, ground - 12), 3.8, 3.5, look["shirt"], 1)
@@ -430,6 +496,7 @@ def hat_hard(c, cx, hy, _):
     m = Mat(["#7a5a08", "#c09010", "#e8c020", "#fff070"], spec=0.6)
     c.ellipse(cx + 0.5, hy - 2.5, 4.4, 3.6, m, group=6, clip=lambda xx, yy: yy < hy - 1.2)
     c.capsule((cx - 3.5, hy - 1.6), (cx + 6, hy - 1.6), 0.7, 0.7, m, 6)
+    c.capsule((cx - 1, hy - 3.6), (cx + 3.5, hy - 3.6), 0.8, 0.8, Mat(["#0a1420", "#1a3450", "#3a6a90", "#8ac0e0"], spec=1), 7)  # goggles
 
 
 def hat_cap(c, cx, hy, _):
@@ -438,15 +505,59 @@ def hat_cap(c, cx, hy, _):
     c.capsule((cx + 2, hy - 1.6), (cx + 6.5, hy - 1.4), 0.8, 0.6, m, 6)
 
 
+CANVAS_BAG = Mat(["#2a2a14", "#46462a", "#646440", "#84845a"])
+LEATHER = Mat(["#2a140a", "#4a2a14", "#6e4222", "#925a30"])
+BRASS = "#e0b040"
+
+
+def ranger_back(c, cx, bob, p):
+    c.capsule((cx - 4.5, 18 + bob), (cx - 4.5, 25 + bob), 3.0, 3.2, CANVAS_BAG, 40)  # backpack
+    c.capsule((cx - 7, 17 + bob), (cx - 2, 17 + bob), 1.6, 1.6, Mat(["#3a1a10", "#6a3020", "#9a4a30", "#c06a48"]), 41)  # bedroll
+
+
+def ranger_front(c, cx, bob, p):
+    c.line((cx - 2.5, 18 + bob), (cx + 2.5, 25 + bob), LEATHER.ramp[1])  # strap
+    for k in range(3):
+        c.pixel(cx - 1.5 + k * 1.6, 19.5 + bob + k * 2.2, BRASS)
+    c.ellipse(cx + 3.5, 28 + bob, 1.6, 2.0, Mat(["#1a2a1a", "#2e4a2e", "#4a6a4a", "#7a9a7a"], spec=0.4), group=42)  # canteen
+
+
+def engineer_front(c, cx, bob, p):
+    for y in (21, 24):  # reflective stripes
+        c.line((cx - 3, y + bob), (cx + 3, y + bob), "#f0f0d8")
+    for k, col in enumerate(("#9a9ca4", "#e8c020", "#9a9ca4")):  # tool belt
+        c.pixel(cx - 2 + k * 2, 27.5 + bob, col)
+
+
+def hunter_front(c, cx, bob, p):
+    c.line((cx + 2.5, 18 + bob), (cx - 2.5, 25.5 + bob), LEATHER.ramp[1])  # bandolier
+    for k in range(4):
+        c.pixel(cx + 1.8 - k * 1.4, 19 + bob + k * 2.0, BRASS)
+
+
+def trapper_back(c, cx, bob, p):
+    c.line((cx - 5, 16 + bob), (cx - 1, 25 + bob), "#b0b0b8")  # machete on the back
+    c.pixel(cx - 5, 15.5 + bob, LEATHER.ramp[2])
+
+
+def trapper_front(c, cx, bob, p):
+    rope = Mat(["#5a4a28", "#8a7440", "#b49c60", "#d8c488"])
+    c.ellipse(cx + 3.5, 28.5 + bob, 2.4, 1.8, rope, group=43,
+              pattern=lambda xx, yy, nx, ny: np.where(((xx + yy) * 1.5).astype(int) % 2 == 0, -1, 0))
+
+
 LOOKS = {
     "ranger": {"shirt": Mat(["#2a3418", "#46562a", "#68803e", "#90a858"]), "pants": Mat(["#2a2014", "#4a3a26", "#6a5638", "#8a7450"]),
-               "hat": None, "hat_fn": hat_bush(["#3a3a1a", "#5e5e2c", "#848442", "#a8a860"]), "gear": "rifle"},
+               "hat": None, "hat_fn": hat_bush(["#3a3a1a", "#5e5e2c", "#848442", "#a8a860"]), "gear": "rifle",
+               "back": ranger_back, "front": ranger_front},
     "engineer": {"shirt": Mat(["#1a2440", "#2a3a62", "#3e5488", "#5a74aa"]), "pants": Mat(["#141c30", "#22304e", "#34466e", "#4a5e8a"]),
-                 "vest": Mat(["#8a3a08", "#d0641a", "#f08a2a", "#ffb050"]), "hat": None, "hat_fn": hat_hard, "gear": "wrench"},
+                 "vest": Mat(["#8a3a08", "#d0641a", "#f08a2a", "#ffb050"]), "hat": None, "hat_fn": hat_hard, "gear": "wrench",
+                 "front": engineer_front},
     "hunter": {"shirt": Mat(["#2a0c0a", "#5a1a14", "#8a2a20", "#b04232"]), "pants": Mat(["#141414", "#26262a", "#3a3a40", "#54545c"]),
-               "hat": None, "hat_fn": hat_cap, "gear": "rifle"},
+               "hat": None, "hat_fn": hat_cap, "gear": "rifle", "scope": True, "stubble": True, "front": hunter_front},
     "trapper": {"shirt": Mat(["#3a2a14", "#6a5030", "#9a7a4c", "#c4a270"]), "pants": Mat(["#20180e", "#3a2c1a", "#56442a", "#74603e"]),
-                "hat": None, "hat_fn": hat_bush(["#2a1a0a", "#4a3018", "#6a4828", "#8a6438"]), "gear": "net"},
+                "hat": None, "hat_fn": hat_bush(["#2a1a0a", "#4a3018", "#6a4828", "#8a6438"]), "gear": "net",
+                "stubble": True, "back": trapper_back, "front": trapper_front},
 }
 
 
@@ -461,7 +572,7 @@ GLASS = Mat(["#1a3040", "#2e5a6e", "#5a94a8", "#a8dce8"], spec=1.0)
 def jeep(frame):
     w, h = 70, 48
     p = pose(frame)
-    c = Canvas(w, h)
+    c = ScaledCanvas(w, h, 1.2)
     ground = h - 3
     dead = p["dead"]
     bob = (math.sin(p["phase"] * 2) * 0.8) if p["walk"] else 0
@@ -470,13 +581,26 @@ def jeep(frame):
     # wheels (far side first)
     for wx in (16, 52):
         c.ellipse(wx + 3, ground - 7, 7, 7, TYRE, group=1, shade=0.6)
-    # chassis
+    c.ellipse(4, by - 6, 4.5, 5.5, TYRE, group=1)  # spare tyre
+    c.ellipse(4, by - 6, 2, 2.5, METAL, group=1)
+    # chassis (with mud splashed along the bottom)
+    rnd = np.random.default_rng(17)
+    mud_noise = rnd.random((200, 200))
     c.polygon([(4, by - 6), (12, by - 12), (40, by - 12), (46, by - 7), (64, by - 6), (66, by + 2), (4, by + 2)], PAINT, normal=(0, -0.1, 1), group=2,
-              pattern=lambda xx, yy, nx, ny: (yy > by - 1) * -1)
+              pattern=lambda xx, yy, nx, ny: (yy > by - 1) * -1 + ((yy > by - 4) & (mud_noise[(yy * 3).astype(int) % 200, (xx * 3).astype(int) % 200] < 0.35)) * -2)
+    c.polygon([(50, by - 6), (58, by - 6), (58, by), (50, by)], Mat(["#14240e", "#24401a", "#365c26", "#4a7a34"]), normal=(0, 0, 1), flat=0.75, group=2)  # jerry can
+    c.line((52, by - 4), (56, by - 4), "#1a2a12")
     c.polygon([(12, by - 12), (40, by - 12), (42, by - 14), (14, by - 14)], PAINT, normal=(0, -1, 0.4), group=2)
     c.capsule((4, by - 2), (66, by - 2), 0.6, 0.6, Mat(["#806020", "#c8a040", "#f0d070"]), 2)  # stripe
+    # crew: driver and gunner
+    c.ellipse(35, by - 16, 2.2, 2.4, SKIN, group=3)
+    c.ellipse(35, by - 17.6, 2.3, 1.2, Mat(["#0e0e10", "#22222a", "#3a3a44"]), group=3)
+    c.ellipse(20, by - 18, 2.2, 2.4, SKIN, group=3)
+    c.ellipse(20, by - 19.8, 2.3, 1.2, Mat(["#2a1a0a", "#4a3018", "#6a4828"]), group=3)
+    c.capsule((20, by - 15), (20, by - 13), 2.4, 2.6, Mat(["#2a0c0a", "#5a1a14", "#8a2a20"]), 3)
     # windshield & roll bar
     c.polygon([(38, by - 12), (44, by - 24), (47, by - 24), (43, by - 12)], GLASS, normal=(0.6, -0.6, 0.6), group=3)
+    c.line((41, by - 15), (44.5, by - 22), "#e8f8ff")  # glare
     c.chain([(10, by - 12), (13, by - 26), (30, by - 26), (33, by - 12)], [1.2, 1.2, 1.2, 1.2], METAL, 4)
     # mounted gun
     atk = p["attack"]
@@ -486,11 +610,13 @@ def jeep(frame):
     if atk == 0:
         for d in ((37, -1), (38, 0), (37, 1), (39, -1), (39, 1), (40, 0)):
             c.pixel(d[0], by - 23 + d[1] - 1, "#fff2a0" if d[0] < 39 else "#ffb030")
-    # headlight & dirt
+    # bull bar, headlight
+    c.chain([(66, by - 8), (69, by - 6), (69, by + 1)], [0.9, 0.9, 0.9], METAL, 6)
     c.ellipse(64, by - 3, 1.6, 1.6, Mat(["#806020", "#f0e080", "#fffff0"], spec=1), group=6)
     # near wheels
     for wx in (12, 48):
-        c.ellipse(wx, ground - 6, 7, 7, TYRE, group=7)
+        c.ellipse(wx, ground - 6, 7, 7, TYRE, group=7,
+                  pattern=lambda xx, yy, nx, ny, wx=wx: np.where((np.arctan2(yy - (ground - 6), xx - wx) * 6).astype(int) % 2 == 0, -1, 0))
         c.ellipse(wx, ground - 6, 3.2, 3.2, METAL, group=8)
         a = p["phase"] * 2
         for k in range(3):

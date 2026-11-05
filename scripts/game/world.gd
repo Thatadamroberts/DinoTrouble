@@ -18,6 +18,9 @@ const CorpseScript = preload("res://scripts/game/corpse.gd")
 const DecalScript = preload("res://scripts/game/decal.gd")
 const DamageFxScript = preload("res://scripts/buildings/damage_fx.gd")
 const AmbientScript = preload("res://scripts/game/ambient.gd")
+const DayNightScript = preload("res://scripts/game/day_night.gd")
+const MissionsScript = preload("res://scripts/core/missions.gd")
+const MissionScript = preload("res://scripts/game/mission.gd")
 const MAX_DECALS := 60
 
 const MAP_SIZE := 64
@@ -64,13 +67,24 @@ var decals: Array = []
 var ambient = null
 var power_lines: Node2D
 var poles: Array = []
+var lamps: Array = []
+var grade: CanvasModulate
+var day_night = null
+var mission: Dictionary = {}
+var mission_node = null
 
 
 func _ready() -> void:
 	GameState.reset()
 	GameState.world = self
-	if map_seed < 0:
-		map_seed = randi() % 100000
+	mission = MissionsScript.get_mission(GameState.mission_id)
+	var save = GameState.pending_save
+	if save != null:
+		map_seed = int(save["seed"])
+	elif map_seed < 0:
+		map_seed = int(mission["seed"]) if int(mission["seed"]) >= 0 else randi() % 100000
+	GameState.time_of_day = float(mission.get("time", 0.15))
+	GameState.cycle_enabled = bool(mission.get("cycle", true))
 	_build_map()
 
 	ground = GroundScript.new()
@@ -111,13 +125,27 @@ func _ready() -> void:
 
 	_setup_audio()
 	_spawn_decor()
-	_spawn_start()
+	if save != null:
+		SaveSystem.restore(self, save)
+		GameState.pending_save = null
+	else:
+		_spawn_start()
 	_spawn_base_props()
+
+	day_night = DayNightScript.new()
+	day_night.name = "DayNight"
+	add_child(day_night)
+	day_night.setup(self, grade)
 
 	ambient = AmbientScript.new()
 	ambient.name = "Ambient"
 	add_child(ambient)
 	ambient.setup(self)
+
+	mission_node = MissionScript.new()
+	mission_node.name = "Mission"
+	add_child(mission_node)
+	mission_node.setup(self, mission)
 
 	ai = AIScript.new()
 	ai.name = "PoacherAI"
@@ -130,10 +158,18 @@ func _ready() -> void:
 	hud.setup(self)
 
 	focus_home()
+	if SaveSystem.pending_camera != null:
+		camera.focus_on(SaveSystem.pending_camera)
+		SaveSystem.pending_camera = null
 	fog.recompute()
+	var autosave := Timer.new()
+	autosave.wait_time = 120.0
+	autosave.autostart = true
+	autosave.timeout.connect(func(): SaveSystem.save_game(self, SaveSystem.AUTOSAVE))
+	add_child(autosave)
 	GameState.game_over.connect(_on_game_over)
-	GameState.notify("Defend the reserve! Destroy the poacher camp to the east.")
-	GameState.notify("Tip: right-click amber with Engineers to gather DNA, then hatch dinosaurs at the Hatchery.")
+	if save == null:
+		hud.show_briefing(mission)
 
 
 func _build_map() -> void:
@@ -212,10 +248,16 @@ func _spawn_decor() -> void:
 func _spawn_start() -> void:
 	spawn_building("ranger_station", "player", Vector2i(13, 48), true)
 	spawn_building("hatchery", "player", Vector2i(17, 44), true)
-	spawn_building("poacher_camp", "poacher", Vector2i(48, 13), true)
-	spawn_building("poacher_tower", "poacher", Vector2i(44, 16), true)
+	for e in mission.get("enemy_buildings", []):
+		spawn_building(e[0], "poacher", e[1], true)
 	if GameState.difficulty >= 2:
-		spawn_building("poacher_tower", "poacher", Vector2i(51, 18), true)
+		for e in mission.get("hard_extra", []):
+			spawn_building(e[0], "poacher", e[1], true)
+	for f in ["player", "poacher"]:
+		var key := "player_res" if f == "player" else "enemy_res"
+		if mission.has(key):
+			GameState.resources[f] = {"dna": float(mission[key]["dna"]), "supplies": float(mission[key]["supplies"])}
+	GameState.resources_changed.emit()
 
 	for t in PLAYER_AMBER + ENEMY_AMBER + MID_AMBER:
 		spawn_resource("amber", t)
@@ -223,12 +265,13 @@ func _spawn_start() -> void:
 		spawn_resource("crates", t)
 
 	var p0 := PLAYER_BASE + Vector2i(3, 3)
-	for id in ["engineer", "engineer", "engineer", "ranger", "ranger"]:
-		spawn_unit(id, "player", free_spot(p0))
-	for i in 2:
-		spawn_unit("raptor", "player", free_spot(Vector2i(20, 48)))
+	for id in mission.get("player_units", MissionsScript.DEFAULT_PLAYER_UNITS):
+		if Defs.UNITS[id]["kind"] == "dino":
+			spawn_unit(id, "player", free_spot(Vector2i(20, 48)))  # by the hatchery's feeders
+		else:
+			spawn_unit(id, "player", free_spot(p0))
 	var e0 := ENEMY_BASE + Vector2i(3, 3)
-	for id in ["trapper", "trapper", "trapper", "hunter", "hunter", "hunter", "jeep"]:
+	for id in mission.get("enemy_units", []):
 		spawn_unit(id, "poacher", free_spot(e0))
 	for g in WILD_GROUPS:
 		for i in int(g[2]):
@@ -243,7 +286,7 @@ func free_spot(t: Vector2i) -> Vector2:
 
 ## Warm colour grading, drifting cloud shadows and a screen vignette.
 func _setup_atmosphere() -> void:
-	var grade := CanvasModulate.new()
+	grade = CanvasModulate.new()
 	grade.color = Color(1.0, 0.96, 0.88)
 	add_child(grade)
 
@@ -292,7 +335,9 @@ func _spawn_base_props() -> void:
 		var t: Vector2i = entry[1]
 		if not map.is_walkable(t):
 			continue
-		_prop(entry[0], Iso.tile_to_world(t))
+		var prop := _prop(entry[0], Iso.tile_to_world(t))
+		if entry[0] == "lamp":
+			lamps.append(prop)
 	for t in POLE_TILES:
 		if map.is_walkable(t):
 			poles.append(_prop("power_pole", Iso.tile_to_world(t)))
@@ -439,6 +484,8 @@ func apply_hit(attacker, target, dmg: float, kind: String) -> void:
 	if was_alive and target.dead and src != null:
 		if src.faction == "player" and target_faction == "poacher":
 			GameState.stats["killed"] += 1
+			var key := "killed_" + String(target.def_id)
+			GameState.stats[key] = int(GameState.stats.get(key, 0)) + 1
 		if target_faction == "player" and target_unit:
 			GameState.stats["lost"] += 1
 	if not target.dead and target_unit:
@@ -638,7 +685,7 @@ func build_speed(faction: String) -> float:
 
 func income_mult(faction: String) -> float:
 	if faction == "poacher":
-		return [0.6, 1.0, 1.5][GameState.difficulty]
+		return [0.6, 1.0, 1.5][GameState.difficulty] * float(mission.get("ai", {}).get("income", 1.0))
 	return 1.0
 
 
@@ -671,21 +718,30 @@ func alert_attack(pos: Vector2) -> void:
 func on_entity_died(e) -> void:
 	if selection != null:
 		selection.forget(e)
+	if e.kind_tag == "building" and e.def_id == "egg_cage":
+		# freed eggs hatch on the spot and join the reserve
+		for i in 2:
+			var u = spawn_unit("raptor", "player", free_spot(Iso.world_to_tile(e.position)))
+			spawn_fx("hearts", u.position + Vector2(0, -16))
+		GameState.stats["rescued"] = int(GameState.stats.get("rescued", 0)) + 2
+		GameState.notify("Eggs rescued! Two hatchlings have joined the reserve.")
+		play_sfx("hatch", e.position)
 	if e.kind_tag == "building":
 		_check_end()
 
 
+## Losing the reserve ends the game; victory is decided by the mission's objectives.
 func _check_end() -> void:
 	if GameState.over:
-		return
-	if find_building("poacher", "poacher_camp") == null:
-		GameState.end_game(true)
 		return
 	if find_building("player", "ranger_station") == null and find_building("player", "hatchery") == null:
 		GameState.end_game(false)
 
 
 func _on_game_over(victory: bool) -> void:
+	var idx := MissionsScript.index_of(GameState.mission_id)
+	if victory and idx >= 0:
+		SaveSystem.mark_completed(GameState.mission_id, idx, MissionsScript.CAMPAIGN.size())
 	play_ui("victory" if victory else "defeat")
 	if hud != null:
 		hud.show_end(victory)

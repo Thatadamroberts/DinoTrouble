@@ -58,7 +58,7 @@ func recompute() -> void:
 		if e.dead:
 			continue
 		var c: Vector2i = Iso.world_to_tile(e.position)
-		var r: int = int(e.data.get("sight", 6))
+		var r: int = maxi(2, int(round(float(e.data.get("sight", 6)) * GameState.sight_mult())))
 		var r2 := r * r
 		for dy in range(-r, r + 1):
 			var y := c.y + dy

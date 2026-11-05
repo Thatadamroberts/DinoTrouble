@@ -14,6 +14,9 @@ func _ready() -> void:
 	var dir := ProjectSettings.globalize_path("res://screenshots")
 	DirAccess.make_dir_recursive_absolute(dir)
 	GameState.difficulty = 1
+	GameState.skip_briefing = true
+	GameState.mission_id = "skirmish"
+	GameState.pending_save = null
 	game = load("res://scenes/main.tscn").instantiate()
 	game.map_seed = 4242
 	add_child(game)
@@ -41,8 +44,17 @@ func _ready() -> void:
 	await _lineup()
 	await _damage()
 	await _life()
+	await _night()
 	print("[shots] done")
 	get_tree().quit(0)
+
+
+## The base at night: lit windows, lamps, glowing fires and fireflies.
+func _night() -> void:
+	GameState.time_of_day = 0.8
+	await _frames(30)
+	var station = game.find_building("player", "ranger_station")
+	await _shot("night", station.position + Vector2(140, -20), 1.25, false)
 
 
 ## Burning buildings, smoke and rubble.
@@ -54,6 +66,8 @@ func _damage() -> void:
 	var t = game.spawn_building("watchtower", "player", World.PLAYER_BASE + Vector2i(-3, 6), true)
 	t.take_damage(1e6, null)
 	await _frames(150)
+	var fx = hatch.damage_fx
+	print("[shots] hatchery damage fx: level=%d parts=%d visible=%s z=%d pos=%s" % [fx.level, fx.parts.size(), fx.is_visible_in_tree(), fx.z_index, fx.global_position])
 	await _shot("damage", hatch.position + Vector2(-60, -30), 1.5, false)
 
 

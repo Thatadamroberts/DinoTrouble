@@ -2,8 +2,13 @@ extends Control
 ## Title screen: start a match, pick difficulty, toggle hunger, read controls.
 
 const TEXT := Color(0.98, 0.92, 0.75)
+const MissionSelect = preload("res://scripts/ui/mission_select.gd")
+const SettingsPanel = preload("res://scripts/ui/settings_panel.gd")
+const SavePanel = preload("res://scripts/ui/save_panel.gd")
 
 var help_panel: PanelContainer
+var main_box: VBoxContainer
+var dialog: Control
 var parade: Array = []
 
 
@@ -17,6 +22,7 @@ func _ready() -> void:
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var vb := VBoxContainer.new()
+	main_box = vb
 	vb.add_theme_constant_override("separation", 12)
 	vb.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(vb)
@@ -32,28 +38,26 @@ func _ready() -> void:
 	vb.add_child(sub)
 	vb.add_child(_spacer(16))
 
-	var start := _button("Start Game")
-	start.pressed.connect(_start)
-	vb.add_child(start)
-	start.grab_focus()
+	var campaign := _button("Campaign")
+	campaign.pressed.connect(func(): _open(MissionSelect.new()))
+	vb.add_child(campaign)
+	campaign.grab_focus()
 
-	var diff := OptionButton.new()
-	diff.add_item("Difficulty: Easy")
-	diff.add_item("Difficulty: Normal")
-	diff.add_item("Difficulty: Hard")
-	diff.selected = GameState.difficulty
-	diff.custom_minimum_size = Vector2(280, 42)
-	diff.add_theme_font_size_override("font_size", 18)
-	diff.item_selected.connect(func(i): GameState.difficulty = i)
-	vb.add_child(diff)
+	var skirmish := _button("Skirmish")
+	skirmish.pressed.connect(_start)
+	vb.add_child(skirmish)
 
-	var hunger := CheckButton.new()
-	hunger.text = "Dinosaur hunger"
-	hunger.button_pressed = GameState.hunger_enabled
-	hunger.add_theme_font_size_override("font_size", 18)
-	hunger.add_theme_color_override("font_color", TEXT)
-	hunger.toggled.connect(func(on): GameState.hunger_enabled = on)
-	vb.add_child(hunger)
+	var load_btn := _button("Load Game")
+	load_btn.pressed.connect(func():
+		var p = SavePanel.new()
+		p.setup("load")
+		_open(p)
+	)
+	vb.add_child(load_btn)
+
+	var settings := _button("Settings")
+	settings.pressed.connect(func(): _open(SettingsPanel.new()))
+	vb.add_child(settings)
 
 	var help := _button("How to Play")
 	help.pressed.connect(func(): help_panel.visible = not help_panel.visible)
@@ -170,4 +174,21 @@ func _process(delta: float) -> void:
 
 
 func _start() -> void:
+	GameState.mission_id = "skirmish"
+	GameState.pending_save = null
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+
+## Shows a panel (mission select, settings, load) in place of the main buttons.
+func _open(panel: Control) -> void:
+	main_box.visible = false
+	help_panel.visible = false
+	dialog = CenterContainer.new()
+	add_child(dialog)
+	dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dialog.add_child(panel)
+	panel.closed.connect(func():
+		dialog.queue_free()
+		dialog = null
+		main_box.visible = true
+	)

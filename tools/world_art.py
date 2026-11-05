@@ -1067,3 +1067,30 @@ def rubble(size, dark=False):
         x, y = lot.g(gx, gy, 0)
         c.capsule((x, y), (x + rnd.uniform(-8, 8), y - rnd.uniform(10, 18)), 1.8, 1.4, LOG if not dark else METAL)
     return lot.render(70)
+
+
+def egg_cage():
+    """A poacher cage of stolen eggs on a straw bed."""
+    lot = Lot(2, 52)
+    c = lot.c
+    lot.ground(DIRT_PAD, 0.95, pattern=speckle(17, 0.2, -1))
+    lot.box(0.72, 0.72, 0, 4, PLANK, PLANK, tex_planks_h, tex_planks_h, tex_planks_v)
+    cx, cy = lot.g(0, 0, 4)
+    c.ellipse(cx, cy, 30, 13, STRAW, round_=0.4, pattern=speckle(41, 0.3, -1))
+    for ex, ey, r in ((-12, -3, 7), (2, -6, 8), (14, -1, 7), (-3, 4, 7)):
+        c.ellipse(cx + ex, cy + ey - r * 0.6, r * 0.8, r, EGG, pattern=speckle(int(ex * 5 + 300), 0.07, -2))
+    T, R, B, L = lot.diamond(0.72, 0.72, 4)
+    top = [(x, y - 34) for x, y in (T, R, B, L)]
+    for p0, p1 in ((L, B), (B, R), (T, R), (L, T)):
+        for t in np.linspace(0, 1, 8):
+            x = p0[0] + (p1[0] - p0[0]) * t
+            y = p0[1] + (p1[1] - p0[1]) * t
+            c.line((x, y), (x, y - 34), shade_hex(METAL, 3 if (p0, p1) in ((L, B), (B, R)) else 1))
+    for a, b in ((top[3], top[2]), (top[2], top[1]), (top[0], top[1]), (top[3], top[0])):
+        c.capsule(a, b, 1.0, 1.0, METAL)
+    lot.sh.prism([L, B, R, T], 36)
+    # padlock and a red warning tag
+    lx, ly = (L[0] + B[0]) / 2, (L[1] + B[1]) / 2 - 16
+    c.ellipse(lx, ly, 2.4, 2.0, Mat(["#5a4a10", "#a88a20", "#e8c040", "#fff080"], spec=1))
+    c.polygon([(lx + 4, ly - 6), (lx + 10, ly - 3), (lx + 10, ly + 1), (lx + 4, ly - 2)], RED_CLOTH, flat=0.8)
+    return lot.render()

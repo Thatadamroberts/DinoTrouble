@@ -6,6 +6,7 @@ extends Node
 ##   godot --headless --fixed-fps 60 --path . res://scenes/tests/smoke_test.tscn
 
 const World = preload("res://scripts/game/world.gd")
+const Missions = preload("res://scripts/core/missions.gd")
 
 var game = null
 var failures: Array = []
@@ -16,6 +17,9 @@ func _ready() -> void:
 	print("[smoke] booting match")
 	GameState.difficulty = 1
 	GameState.hunger_enabled = true
+	GameState.skip_briefing = true
+	GameState.mission_id = "skirmish"
+	GameState.pending_save = null
 	game = load("res://scenes/main.tscn").instantiate()
 	game.map_seed = 4242
 	add_child(game)
@@ -123,9 +127,68 @@ func _ready() -> void:
 	if not GameState.over:
 		var camp = game.find_building("poacher", "poacher_camp")
 		camp.take_damage(1e6, null)
+		await _seconds(1.0)
 		_check(GameState.over and GameState.victory, "destroying the camp wins the game")
 
+	await _campaign_tests()
 	_finish()
+
+
+func _boot(mission_id: String, seed_value: int = -1, save = null):
+	if game != null and is_instance_valid(game):
+		game.queue_free()
+		await _frames(2)
+	get_tree().paused = false
+	GameState.mission_id = mission_id
+	GameState.pending_save = save
+	game = load("res://scenes/main.tscn").instantiate()
+	if seed_value >= 0:
+		game.map_seed = seed_value
+	add_child(game)
+	await _frames(3)
+
+
+func _campaign_tests() -> void:
+	# every mission boots with its objectives
+	for m in Missions.CAMPAIGN:
+		await _boot(String(m["id"]))
+		_check(game.mission_node.objectives.size() == m["objectives"].size(), "mission %s boots with its objectives" % m["id"])
+	# tutorial objectives complete in order
+	await _boot("m1")
+	GameState.stats["gathered_dna"] = 60
+	await _seconds(1.0)
+	_check(game.mission_node.objectives[0]["done"] and not game.mission_node.objectives[1]["done"], "tutorial objectives progress in order")
+	# stolen eggs: breaking the cages rescues hatchlings and wins
+	await _boot("m2")
+	var raptors0 := _of("player", "raptor").size()
+	var cages: Array = get_tree().get_nodes_in_group("buildings").filter(func(b): return b.def_id == "egg_cage")
+	_check(cages.size() == 3, "mission 2 has three egg cages")
+	for c in cages:
+		c.take_damage(1e6, null)
+	await _seconds(1.0)
+	_check(_of("player", "raptor").size() >= raptors0 + 6, "breaking cages frees hatchlings")
+	_check(GameState.over and GameState.victory, "rescuing all eggs wins mission 2")
+	_check(SaveSystem.unlocked >= 3, "winning unlocks the next mission")
+	# hold the line: the survive timer wins
+	await _boot("m3")
+	GameState.elapsed = 359.0
+	await _seconds(2.0)
+	_check(GameState.over and GameState.victory, "surviving the timer wins mission 3")
+	# save / load round trip
+	await _boot("skirmish", 4242)
+	await _seconds(2.0)
+	var data: Dictionary = JSON.parse_string(JSON.stringify(SaveSystem.serialize(game)))
+	var units0 := get_tree().get_nodes_in_group("units").size()
+	var dna0: int = GameState.get_res("player", "dna")
+	await _boot("skirmish", -1, data)
+	_check(get_tree().get_nodes_in_group("units").size() == units0, "loading a save restores every unit (%d)" % units0)
+	_check(GameState.get_res("player", "dna") == dna0, "loading a save restores resources")
+	_check(game.map_seed == 4242, "loading a save rebuilds the same island")
+	# night
+	GameState.time_of_day = 0.8
+	_check(GameState.night() > 0.9 and GameState.sight_mult() < 0.8, "night falls and sight shrinks")
+	GameState.time_of_day = 0.3
+	_check(GameState.night() < 0.05, "daytime is bright")
 
 
 func _finish() -> void:

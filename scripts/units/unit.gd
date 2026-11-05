@@ -463,7 +463,7 @@ func _scan(range_px: float):
 
 
 func _sight_px() -> float:
-	return float(data["sight"]) * Iso.TILE_DIST
+	return float(data["sight"]) * Iso.TILE_DIST * GameState.sight_mult()
 
 
 func _do_idle(delta: float) -> void:
@@ -686,6 +686,9 @@ func _do_return(delta: float) -> void:
 		move_to(drop_target.position)
 	if _arrived_at(drop_target, 30.0):
 		GameState.add(faction, carry_type, carry)
+		if faction == "player":
+			var key := "gathered_" + carry_type
+			GameState.stats[key] = int(GameState.stats.get(key, 0)) + carry
 		carry = 0
 		drop_target = null
 		state = S.GATHER

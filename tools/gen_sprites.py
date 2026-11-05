@@ -129,6 +129,7 @@ def gen_world():
     save(world_art.watchtower(dark=True), "buildings/poacher_tower.png")
     save(world_art.supply_depot(), "buildings/supply_depot.png")
     save(world_art.poacher_camp(), "buildings/poacher_camp.png")
+    save(world_art.egg_cage(), "buildings/egg_cage.png")
     save(world_art.amber(), "resources/amber.png")
     save(world_art.crates(), "resources/crates.png")
     for v in range(3):

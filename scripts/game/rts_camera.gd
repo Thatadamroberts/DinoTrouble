@@ -30,7 +30,7 @@ func _process(delta: float) -> void:
 		dir.y -= 1
 	if Input.is_key_pressed(KEY_DOWN):
 		dir.y += 1
-	if mouse_in and not dragging and DisplayServer.window_is_focused():
+	if mouse_in and not dragging and bool(SaveSystem.settings["edge_scroll"]) and DisplayServer.window_is_focused():
 		var vp := get_viewport()
 		var m := vp.get_mouse_position()
 		var sz := vp.get_visible_rect().size
@@ -44,7 +44,7 @@ func _process(delta: float) -> void:
 			elif m.y > sz.y - EDGE:
 				dir.y += 1
 	if dir != Vector2.ZERO:
-		position += dir.normalized() * PAN_SPEED * delta / zoom.x
+		position += dir.normalized() * PAN_SPEED * float(SaveSystem.settings["scroll_speed"]) * delta / zoom.x
 		_clamp()
 
 

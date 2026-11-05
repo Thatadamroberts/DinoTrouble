@@ -3,6 +3,9 @@ extends CanvasLayer
 ## command card, pause menu and end screen. Built in code.
 
 const MinimapScript = preload("res://scripts/ui/minimap.gd")
+const SettingsPanel = preload("res://scripts/ui/settings_panel.gd")
+const SavePanel = preload("res://scripts/ui/save_panel.gd")
+const Missions = preload("res://scripts/core/missions.gd")
 
 const PANEL_BG := Color(0.12, 0.1, 0.07, 0.94)
 const PANEL_BORDER := Color(0.55, 0.45, 0.25)
@@ -29,6 +32,11 @@ var end_stats: Label
 var hunger_check: CheckButton
 var actions: Array = []  # [{"key": int, "call": Callable}]
 var info_t := 0.0
+var mission_label: Label
+var obj_box: VBoxContainer
+var dialog: Control
+var briefing_panel: Control
+var next_button: Button
 
 
 func setup(w) -> void:
@@ -42,9 +50,13 @@ func setup(w) -> void:
 	_build_top()
 	_build_bottom()
 	_build_messages()
+	_build_objectives()
 	_build_pause()
 	_build_end()
 	world.selection.changed.connect(refresh_selection)
+	if world.mission_node != null:
+		world.mission_node.changed.connect(_refresh_objectives)
+		_refresh_objectives()
 	GameState.message.connect(show_message)
 	GameState.resources_changed.connect(_update_top)
 	refresh_selection()
@@ -99,8 +111,8 @@ func _build_top() -> void:
 	hb.add_child(res_label)
 	pop_label = _label("", 16)
 	hb.add_child(pop_label)
-	var obj := _label("Objective: destroy the Poacher Camp (east)", 14, Color(0.8, 0.8, 0.7))
-	hb.add_child(obj)
+	mission_label = _label(String(world.mission.get("name", "Skirmish")), 15, Color(1.0, 0.85, 0.45))
+	hb.add_child(mission_label)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb.add_child(spacer)
@@ -214,12 +226,13 @@ func _build_pause() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(title)
 	vb.add_child(_button("Resume", toggle_pause))
+	vb.add_child(_button("Save Game", func(): _open_dialog(_save_panel("save"))))
+	vb.add_child(_button("Load Game", func(): _open_dialog(_save_panel("load"))))
+	vb.add_child(_button("Settings", func(): _open_dialog(SettingsPanel.new())))
 	hunger_check = CheckButton.new()
-	hunger_check.text = "Dinosaur hunger"
-	hunger_check.button_pressed = GameState.hunger_enabled
-	hunger_check.toggled.connect(func(on): GameState.hunger_enabled = on)
+	hunger_check.visible = false  # kept for compatibility; hunger lives in Settings now
 	vb.add_child(hunger_check)
-	vb.add_child(_button("Restart", _restart))
+	vb.add_child(_button("Restart Mission", _restart))
 	vb.add_child(_button("Main Menu", _to_menu))
 	if not OS.has_feature("web"):
 		vb.add_child(_button("Quit", func(): get_tree().quit()))
@@ -239,6 +252,9 @@ func _build_end() -> void:
 	end_stats = _label("", 16)
 	end_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(end_stats)
+	next_button = _button("Next Mission", _next_mission)
+	next_button.visible = false
+	vb.add_child(next_button)
 	vb.add_child(_button("Play Again", _restart))
 	vb.add_child(_button("Main Menu", _to_menu))
 
@@ -266,7 +282,7 @@ func _update_top() -> void:
 	res_label.text = "DNA: %d    Supplies: %d" % [GameState.get_res("player", "dna"), GameState.get_res("player", "supplies")]
 	pop_label.text = "Units: %d/%d" % [world.count_units("player"), Defs.POP_CAP]
 	var s := int(GameState.elapsed)
-	time_label.text = "%02d:%02d" % [s / 60, s % 60]
+	time_label.text = "%s   %02d:%02d" % [GameState.phase_name(), s / 60, s % 60]
 
 
 func show_message(text: String) -> void:
@@ -464,11 +480,98 @@ func show_end(victory: bool) -> void:
 	end_title.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5) if victory else Color(1.0, 0.4, 0.3))
 	var s := int(GameState.elapsed)
 	var st: Dictionary = GameState.stats
+	var campaign := Missions.index_of(GameState.mission_id) >= 0
 	var head := "The poachers have been driven off the island!" if victory else "The reserve has fallen to the poachers."
+	if campaign:
+		head = ("Mission complete: " if victory else "Mission failed: ") + String(world.mission["name"])
+	next_button.visible = victory and Missions.next_id(GameState.mission_id) != ""
 	end_stats.text = "%s\n\nTime: %02d:%02d\nDinosaurs hatched: %d    Tamed: %d\nPoachers defeated: %d    Units lost: %d" % [
 		head, s / 60, s % 60, st["hatched"], st["tamed"], st["killed"], st["lost"]]
 	end_panel.visible = true
 	get_tree().paused = true
+
+
+func _next_mission() -> void:
+	GameState.mission_id = Missions.next_id(GameState.mission_id)
+	_restart()
+
+
+# ---------------------------------------------------------------------------
+# Objectives, briefing and dialogs
+# ---------------------------------------------------------------------------
+func _build_objectives() -> void:
+	var panel := PanelContainer.new()
+	var sb := _style(Color(0.1, 0.08, 0.06, 0.8))
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(panel)
+	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	panel.offset_top = 40
+	panel.offset_right = -8
+	obj_box = VBoxContainer.new()
+	obj_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(obj_box)
+
+
+func _refresh_objectives() -> void:
+	if obj_box == null:
+		return
+	for c in obj_box.get_children():
+		obj_box.remove_child(c)
+		c.queue_free()
+	obj_box.add_child(_label("Objectives", 15, Color(1.0, 0.85, 0.45)))
+	for o in world.mission_node.visible_objectives():
+		var done: bool = o["done"]
+		var t := ("[x] " if done else "[ ] ") + String(o["def"]["text"])
+		if o["progress"] != "" and not done:
+			t += "  (" + String(o["progress"]) + ")"
+		obj_box.add_child(_label(t, 13, Color(0.6, 0.95, 0.6) if done else TEXT))
+
+
+func show_briefing(m: Dictionary) -> void:
+	if GameState.skip_briefing:
+		return
+	briefing_panel = _overlay()
+	var vb := _center_panel(briefing_panel)
+	var t := _label(String(m["name"]), 30, Color(1.0, 0.85, 0.45))
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(t)
+	var text := String(m["briefing"]) + "\n\nObjectives:"
+	for o in m.get("objectives", []):
+		text += "\n  - " + String(o["text"])
+	var body := _label(text, 16)
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.custom_minimum_size = Vector2(560, 0)
+	vb.add_child(body)
+	vb.add_child(_button("Begin", func():
+		briefing_panel.queue_free()
+		briefing_panel = null
+		get_tree().paused = false
+	))
+	briefing_panel.visible = true
+	get_tree().paused = true
+
+
+func _save_panel(mode: String) -> Control:
+	var p = SavePanel.new()
+	p.setup(mode, world)
+	return p
+
+
+func _open_dialog(panel: Control) -> void:
+	pause_panel.visible = false
+	dialog = _overlay()
+	var center := CenterContainer.new()
+	dialog.add_child(center)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.add_child(panel)
+	panel.closed.connect(func():
+		dialog.queue_free()
+		dialog = null
+		pause_panel.visible = true
+	)
+	dialog.visible = true
 
 
 func _restart() -> void:

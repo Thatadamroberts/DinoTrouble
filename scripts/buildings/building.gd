@@ -183,6 +183,8 @@ func add_build_progress(delta: float) -> void:
 		queue_redraw()
 		if faction == "player":
 			GameState.notify("%s complete." % data["name"])
+			var key := "built_" + def_id
+			GameState.stats[key] = int(GameState.stats.get(key, 0)) + 1
 
 
 func repair(delta: float) -> void:

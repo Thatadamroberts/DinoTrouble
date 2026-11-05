@@ -15,6 +15,10 @@ const CameraScript = preload("res://scripts/game/rts_camera.gd")
 const HudScript = preload("res://scripts/ui/hud.gd")
 const AIScript = preload("res://scripts/ai/poacher_ai.gd")
 const CorpseScript = preload("res://scripts/game/corpse.gd")
+const DecalScript = preload("res://scripts/game/decal.gd")
+const DamageFxScript = preload("res://scripts/buildings/damage_fx.gd")
+const AmbientScript = preload("res://scripts/game/ambient.gd")
+const MAX_DECALS := 60
 
 const MAP_SIZE := 64
 const PLAYER_BASE := Vector2i(14, 49)
@@ -56,6 +60,10 @@ var sfx_cache := {}
 var ui_player: AudioStreamPlayer
 var alert_cd := 0.0
 var spawn_count := {}
+var decals: Array = []
+var ambient = null
+var power_lines: Node2D
+var poles: Array = []
 
 
 func _ready() -> void:
@@ -104,6 +112,12 @@ func _ready() -> void:
 	_setup_audio()
 	_spawn_decor()
 	_spawn_start()
+	_spawn_base_props()
+
+	ambient = AmbientScript.new()
+	ambient.name = "Ambient"
+	add_child(ambient)
+	ambient.setup(self)
 
 	ai = AIScript.new()
 	ai.name = "PoacherAI"
@@ -259,6 +273,77 @@ func _setup_atmosphere() -> void:
 	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
+## Fences, lamps, a generator and power lines round the reserve; sandbags
+## and fuel drums at the poacher camp. Purely decorative (non-blocking).
+const PLAYER_PROPS := [
+	["sign", Vector2i(18, 53)], ["generator", Vector2i(11, 52)], ["lamp", Vector2i(16, 52)], ["lamp", Vector2i(12, 46)],
+	["lamp", Vector2i(21, 48)], ["fence_b", Vector2i(8, 46)], ["fence_b", Vector2i(8, 47)], ["fence_b", Vector2i(8, 48)],
+	["fence_a", Vector2i(10, 55)], ["fence_a", Vector2i(11, 55)], ["fence_a", Vector2i(12, 55)],
+]
+const POACHER_PROPS := [
+	["sandbags", Vector2i(46, 12)], ["sandbags", Vector2i(47, 18)], ["sandbags", Vector2i(53, 16)],
+	["fuel_drums", Vector2i(52, 11)], ["fuel_drums", Vector2i(46, 15)],
+]
+const POLE_TILES := [Vector2i(16, 47), Vector2i(20, 50)]
+
+
+func _spawn_base_props() -> void:
+	for entry in PLAYER_PROPS + POACHER_PROPS:
+		var t: Vector2i = entry[1]
+		if not map.is_walkable(t):
+			continue
+		_prop(entry[0], Iso.tile_to_world(t))
+	for t in POLE_TILES:
+		if map.is_walkable(t):
+			poles.append(_prop("power_pole", Iso.tile_to_world(t)))
+	power_lines = Node2D.new()
+	power_lines.name = "PowerLines"
+	power_lines.z_index = 24
+	power_lines.draw.connect(_draw_power_lines)
+	add_child(power_lines)
+	var timer := Timer.new()
+	timer.wait_time = 1.0
+	timer.autostart = true
+	timer.timeout.connect(power_lines.queue_redraw)
+	add_child(timer)
+
+
+func _prop(id: String, pos: Vector2) -> Sprite2D:
+	var s := Sprite2D.new()
+	var tex: Texture2D = load("res://assets/sprites/props/%s.png" % id)
+	s.texture = tex
+	s.position = pos
+	s.offset = Vector2(0, -tex.get_height() / 2.0 + 4.0)
+	entities.add_child(s)
+	return s
+
+
+## Sagging cables: ranger station -> poles -> hatchery (while they stand).
+func _draw_power_lines() -> void:
+	var pts: Array = []
+	var station = find_building("player", "ranger_station")
+	if station != null and station.built:
+		pts.append(station.position + Vector2(-10, -78))
+	for p in poles:
+		pts.append(p.position + Vector2(0, -62))
+	var hatch = find_building("player", "hatchery")
+	if hatch != null and hatch.built:
+		pts.append(hatch.position + Vector2(40, -40))
+	for i in range(pts.size() - 1):
+		_cable(pts[i], pts[i + 1], Vector2(0, 0))
+		_cable(pts[i] + Vector2(-8, 2), pts[i + 1] + Vector2(-8, 2), Vector2(0, 0))
+
+
+func _cable(a: Vector2, b: Vector2, _off: Vector2) -> void:
+	var prev := a
+	var sag := a.distance_to(b) * 0.08
+	for k in range(1, 13):
+		var t := k / 12.0
+		var p := a.lerp(b, t) + Vector2(0, sin(t * PI) * sag)
+		power_lines.draw_line(prev.round(), p.round(), Color(0.08, 0.07, 0.06), 1.0)
+		prev = p
+
+
 func spawn_corpse(u) -> void:
 	var c = CorpseScript.new()
 	c.setup(u)
@@ -299,10 +384,44 @@ func spawn_projectile(from_ent, to_ent, kind: String, dmg: float, from_pos = nul
 	projectiles.add_child(p)
 
 
-func spawn_fx(kind: String, pos: Vector2, color: Color = Color.WHITE) -> void:
+func spawn_fx(kind: String, pos: Vector2, color: Color = Color.WHITE, size: float = 1.0) -> void:
 	var f = FxScript.new()
-	f.setup(kind, pos, color)
+	f.setup(kind, pos, color, size)
 	projectiles.add_child(f)
+
+
+## Flat ground mark (blood / oil / scorch); the oldest are recycled past a cap.
+func spawn_decal(kind: String, pos: Vector2, size: float = 1.0) -> void:
+	decals = decals.filter(func(d): return is_instance_valid(d))
+	while decals.size() >= MAX_DECALS:
+		var old = decals.pop_front()
+		old.queue_free()
+	var d = DecalScript.new()
+	d.setup(kind, pos, size)
+	ground_decor.add_child(d)
+	decals.append(d)
+
+
+func is_on_screen(pos: Vector2, margin: float = 100.0) -> bool:
+	return camera != null and view_rect().grow(margin).has_point(pos)
+
+
+## Rubble left where a building stood; it smoulders for a while.
+func spawn_rubble(b) -> void:
+	var id := "rubble_%d%s" % [b.size, "_dark" if b.faction == "poacher" else ""]
+	var s := Sprite2D.new()
+	var tex: Texture2D = load("res://assets/sprites/rubble/%s.png" % id)
+	s.texture = tex
+	s.centered = false
+	s.offset = Vector2(-tex.get_width() / 2.0, -(tex.get_height() - b.size * 16.0))
+	s.position = b.position
+	s.z_index = -1
+	s.add_to_group("rubble")
+	ground_decor.add_child(s)
+	var smoke = DamageFxScript.new()
+	smoke.setup_rubble(self, b.size, 15.0)
+	s.add_child(smoke)
+	spawn_decal("scorch", b.position, b.size * 1.6)
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +453,11 @@ func apply_hit(attacker, target, dmg: float, kind: String) -> void:
 			spawn_fx("splat", fx_pos)
 		"bullet":
 			spawn_fx("spark", fx_pos)
+	if not target_unit:
+		spawn_fx("debris", fx_pos + Vector2(randf_range(-20, 20), -10), Color(0.5, 0.36, 0.22))
+	elif kind != "net" and kind != "venom" and randf() < 0.45:
+		var mark := "oil" if target.data.get("kind", "") == "vehicle" else "blood"
+		spawn_decal(mark, target.position + Vector2(randf_range(-8, 8), randf_range(-3, 3)), 0.6 + target.radius / 30.0)
 
 
 ## Should `a` attack `b` on its own initiative?

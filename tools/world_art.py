@@ -929,3 +929,141 @@ def lily(seed):
         for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 0)):
             c.pixel(fx + dx, fy + dy, "#ff9ac0" if (dx, dy) != (0, 0) else "#ffe080")
     return c.finish()
+
+
+# ---------------------------------------------------------------------------
+# Base props & rubble
+# ---------------------------------------------------------------------------
+def fence(direction):
+    """Log-rail fence segment spanning one tile edge. direction 'a' runs
+    down-right (along grid x), 'b' runs up-right (along grid y)."""
+    c = Canvas(72, 44)
+    sh = ShadowLayer(72, 44)
+    if direction == "a":
+        p0, p1 = (6, 18), (62, 40)
+    else:
+        p0, p1 = (6, 40), (62, 18)
+    for t in (0.0, 0.5, 1.0):
+        x, y = p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t
+        sh.prism([(x - 1, y), (x + 1, y)], 14, 0.6, -0.1)
+    for z in (5, 11):
+        sh.prism([p0, p1], 2, 0.6, -0.1)
+    for t in (0.0, 0.5, 1.0):
+        x, y = p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t
+        c.capsule((x, y), (x, y - 15), 1.6, 1.4, LOG, 1)
+    for z in (5, 11):
+        c.capsule((p0[0], p0[1] - z), (p1[0], p1[1] - z), 1.2, 1.2, LOG, 2)
+    img = sh.image(80)
+    img.alpha_composite(c.finish())
+    return img
+
+
+def lamp():
+    c = Canvas(28, 56)
+    sh = ShadowLayer(28, 56)
+    sh.prism([(12, 52), (15, 52)], 46, 0.5, -0.08)
+    c.capsule((13, 52), (13, 12), 1.4, 1.1, METAL, 1)
+    c.capsule((13, 13), (19, 12), 0.9, 0.9, METAL, 1)
+    c.polygon([(16, 13), (22, 13), (21, 19), (17, 19)], METAL, flat=0.6, group=2)
+    c.ellipse(19, 17, 2.2, 2.2, Mat(["#806020", "#f0c040", "#fff0a0", "#ffffff"], spec=1), group=3)
+    c.ellipse(13, 52, 3.5, 1.5, STONE, group=4)
+    img = sh.image(80)
+    img.alpha_composite(c.finish())
+    return img
+
+
+def generator():
+    lot = Lot(1, 34, margin=6)
+    lot.c = Canvas(lot.w, lot.h)
+    lot.sh = ShadowLayer(lot.w, lot.h)
+    green = Mat(["#0e2410", "#1a3e1c", "#2a5a2a", "#3e7a3a", "#5a9a50"], spec=0.3)
+    lot.box(0.32, 0.22, 0, 12, green, green, tex_corrugated, tex_flat, tex_flat)
+    p = lot.g(0.15, -0.1, 12)
+    lot.c.capsule(p, (p[0], p[1] - 12), 1.6, 1.4, METAL)  # exhaust stack
+    lot.c.ellipse(p[0], p[1] - 12, 1.8, 0.9, METAL, group=lot.c.n - 1)
+    q = lot.g(-0.32, 0.0, 6)
+    lot.c.polygon([(q[0] + 2, q[1] - 2), (q[0] + 8, q[1] + 1), (q[0] + 8, q[1] + 5), (q[0] + 2, q[1] + 2)], METAL, flat=0.55)
+    lot.c.pixel(q[0] + 4, q[1] + 1, "#40ff60")
+    lot.c.pixel(q[0] + 6, q[1] + 2, "#ff4040")
+    return lot.render(90)
+
+
+def power_pole():
+    c = Canvas(30, 76)
+    sh = ShadowLayer(30, 76)
+    sh.prism([(13, 72), (16, 72)], 66, 0.45, -0.07)
+    c.capsule((14, 72), (14, 8), 1.8, 1.4, LOG, 1)
+    c.capsule((5, 12), (23, 12), 1.0, 1.0, LOG, 2)
+    for x in (6, 14, 22):
+        c.ellipse(x, 10, 1.2, 1.4, Mat(["#606060", "#a0a8b0", "#e0e8f0"], spec=1), group=3)
+    img = sh.image(80)
+    img.alpha_composite(c.finish())
+    return img
+
+
+def sandbags():
+    c = Canvas(48, 26)
+    sh = ShadowLayer(48, 26)
+    sh.blob(28, 20, 18, 4)
+    for row, (y, n) in enumerate(((20, 5), (15, 4), (10, 3))):
+        for i in range(n):
+            x = 10 + i * 7 + row * 3.5
+            c.ellipse(x, y, 4.2, 2.8, SAND_BAG, group=row * 10 + i, pattern=speckle(row * 10 + i, 0.15, -1))
+    img = sh.image(85)
+    img.alpha_composite(c.finish())
+    return img
+
+
+def fuel_drums():
+    lot = Lot(1, 30, margin=6)
+    lot.c = Canvas(lot.w, lot.h)
+    lot.sh = ShadowLayer(lot.w, lot.h)
+    for gx, gy in ((-0.15, -0.1), (0.15, -0.1), (0.0, 0.15)):
+        p = lot.g(gx, gy, 0)
+        lot.barrel(p[0], p[1], mat=RED_CLOTH, h=11, r=4.5)
+    return lot.render(90)
+
+
+def sign():
+    c = Canvas(40, 40)
+    sh = ShadowLayer(40, 40)
+    sh.prism([(10, 36), (30, 36)], 20, 0.5, -0.08)
+    for x in (12, 28):
+        c.capsule((x, 36), (x, 16), 1.3, 1.2, LOG, 1)
+    c.polygon([(6, 8), (34, 8), (34, 22), (6, 22)], PLANK, flat=0.85, group=2,
+              pattern=lambda xx, yy, nx, ny: np.where(yy.astype(int) % 5 == 0, -1, 0))
+    # stylised dinosaur footprint emblem (three toes) on the board
+    for dx, dy in ((-3, -2), (0, -3), (3, -2)):
+        c.pixel(20 + dx, 14 + dy, "#2a5a20")
+        c.pixel(20 + dx, 15 + dy, "#2a5a20")
+    for dx in (-1, 0, 1):
+        c.pixel(20 + dx, 16, "#2a5a20")
+        c.pixel(20 + dx, 17, "#2a5a20")
+    img = sh.image(80)
+    img.alpha_composite(c.finish())
+    return img
+
+
+def rubble(size, dark=False):
+    """Collapsed building footprint: scorched ground, debris, broken beams."""
+    lot = Lot(size, 26, margin=8)
+    c = lot.c
+    rnd = np.random.default_rng(size * 13 + (7 if dark else 0))
+    scorch = Mat(["#141210", "#221e1a", "#322c24", "#463e32", "#5a5040"])
+    lot.ground(scorch, size * 0.48, pattern=speckle(size + 3, 0.3, -1))
+    debris_mats = [STONE, PLANK, METAL if dark else LOG, CONCRETE if not dark else RUST]
+    for _ in range(14 * size):
+        gx, gy = rnd.uniform(-0.42, 0.42, 2) * size
+        x, y = lot.g(gx, gy, 0)
+        m = debris_mats[rnd.integers(0, len(debris_mats))]
+        if rnd.random() < 0.55:
+            c.ellipse(x, y - 2, rnd.uniform(2.5, 5.0), rnd.uniform(1.6, 3.0), m, group=c.n, round_=0.8)
+        else:
+            L = rnd.uniform(6, 14)
+            a = rnd.uniform(0, math.tau)
+            c.capsule((x, y - 2), (x + math.cos(a) * L, y - 2 + math.sin(a) * L * 0.5 - rnd.uniform(0, 6)), 1.4, 1.1, m)
+    for _ in range(2 + size):  # a few beams still standing at an angle
+        gx, gy = rnd.uniform(-0.3, 0.3, 2) * size
+        x, y = lot.g(gx, gy, 0)
+        c.capsule((x, y), (x + rnd.uniform(-8, 8), y - rnd.uniform(10, 18)), 1.8, 1.4, LOG if not dark else METAL)
+    return lot.render(70)

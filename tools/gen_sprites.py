@@ -150,6 +150,14 @@ def gen_world():
     for name, (fn, count, seed) in extra.items():
         for v in range(count):
             save(fn(seed + v), f"decor/{name}_{v}.png")
+    save(world_art.fence("a"), "props/fence_a.png")
+    save(world_art.fence("b"), "props/fence_b.png")
+    for name in ("lamp", "generator", "power_pole", "sandbags", "fuel_drums", "sign"):
+        save(getattr(world_art, name)(), f"props/{name}.png")
+    for s in (2, 3):
+        save(world_art.rubble(s), f"rubble/rubble_{s}.png")
+        save(world_art.rubble(s, dark=True), f"rubble/rubble_{s}_dark.png")
+    save(units_art.make_strip(units_art.pteranodon, 4), "ambient/pteranodon.png")
     textures, noise = world_art.ground_textures()
     for name, img in textures.items():
         save(img, f"terrain/{name}.png")

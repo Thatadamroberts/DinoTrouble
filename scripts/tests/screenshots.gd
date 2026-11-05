@@ -39,8 +39,36 @@ func _ready() -> void:
 	await _shot("coast", Iso.tile_to_world(Vector2i(32, 58)), 1.0)
 	await _shot("wide", Iso.tile_to_world(Vector2i(32, 32)), 0.5)
 	await _lineup()
+	await _damage()
+	await _life()
 	print("[shots] done")
 	get_tree().quit(0)
+
+
+## Burning buildings, smoke and rubble.
+func _damage() -> void:
+	var hatch = game.find_building("player", "hatchery")
+	var station = game.find_building("player", "ranger_station")
+	hatch.hp = hatch.max_hp * 0.2
+	station.hp = station.max_hp * 0.5
+	var t = game.spawn_building("watchtower", "player", World.PLAYER_BASE + Vector2i(-3, 6), true)
+	t.take_damage(1e6, null)
+	await _frames(150)
+	await _shot("damage", hatch.position + Vector2(-60, -30), 1.5, false)
+
+
+## Flying reptiles, butterflies, splashes, muzzle flashes, dust and blood.
+func _life() -> void:
+	var view_center: Vector2 = Iso.tile_to_world(World.PLAYER_BASE + Vector2i(8, -5))
+	game.camera.position = view_center
+	game.camera.zoom = Vector2(1.5, 1.5)
+	await _frames(5)
+	game.ambient.spawn_flock()
+	game.ambient.flocks[-1]["pos"] = view_center + Vector2(-260, -120)
+	for i in 4:
+		game.spawn_decal("blood", view_center + Vector2(randf_range(-120, 120), randf_range(-60, 60)), 1.2)
+	await _frames(40)
+	await _shot("life", view_center, 1.5, false)
 
 
 ## Every unit type side by side, shot close up at full resolution.

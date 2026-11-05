@@ -636,3 +636,44 @@ def make_sheet(fn, *args):
     for i, fr in enumerate(frames):
         sheet.paste(fr, (i * w, 0))
     return sheet
+
+
+# ---------------------------------------------------------------------------
+# Ambient flying reptile (4-frame flap cycle, facing right)
+# ---------------------------------------------------------------------------
+PTERO_SKIN = Mat(["#2a1a14", "#4a3020", "#6e4a30", "#946a44", "#b88c5c"])
+MEMBRANE = Mat(["#3a1a14", "#6a3020", "#9a4a2a", "#c46a3a", "#e08a50"])
+
+
+def pteranodon(frame):
+    c = ScaledCanvas(56, 34, 1.0)
+    flap = [-9.0, -2.0, 7.0, -2.0][frame % 4]
+    body = (26, 18)
+    tip_far = (body[0] - 6, body[1] + flap * 0.8 - 2)
+    tip_near = (body[0] + 2, body[1] + flap + 4)
+    # far wing (behind the body), darker
+    c.polygon([(body[0] - 3, body[1] - 1), (tip_far[0] - 14, tip_far[1] - 6), (tip_far[0] - 6, tip_far[1] + 2), (body[0] - 6, body[1] + 2)],
+              MEMBRANE, normal=(-0.2, -0.6, 0.8), group=1, shade=0.7)
+    c.capsule((body[0] + 9, body[1] - 1), (body[0] - 10, body[1] + 1), 2.6, 1.6, PTERO_SKIN, 2)
+    c.capsule((body[0] - 10, body[1] + 1), (body[0] - 15, body[1] + 2), 1.0, 0.4, PTERO_SKIN, 2)
+    head = (body[0] + 12, body[1] - 3)
+    c.ellipse(head[0], head[1], 3.2, 2.2, PTERO_SKIN, group=3)
+    c.capsule(head, (head[0] + 10, head[1] + 1.5), 1.4, 0.4, Mat(["#6a5a38", "#a8945c", "#d8c488"]), 3)  # beak
+    c.capsule(head, (head[0] - 8, head[1] - 4), 1.6, 0.5, MEMBRANE, 3)  # crest
+    c.pixel(head[0] + 1, head[1] - 1, "#f0d040")
+    # near wing in front
+    c.polygon([(body[0] + 3, body[1] - 1), (tip_near[0] + 18, tip_near[1] + 4), (tip_near[0] + 8, tip_near[1] + 7), (body[0] - 4, body[1] + 2)],
+              MEMBRANE, normal=(0.1, -0.5, 0.9), group=4,
+              pattern=lambda xx, yy, nx, ny: np.where((xx * 0.5 + yy).astype(int) % 5 == 0, -1, 0))
+    c.line((body[0] + 3, body[1] - 1), (tip_near[0] + 18, tip_near[1] + 4), PTERO_SKIN.ramp[1])
+    return c.finish()
+
+
+def make_strip(fn, n):
+    from PIL import Image
+    frames = [fn(f) for f in range(n)]
+    w, h = frames[0].size
+    sheet = Image.new("RGBA", (w * n, h), (0, 0, 0, 0))
+    for i, fr in enumerate(frames):
+        sheet.paste(fr, (i * w, 0))
+    return sheet

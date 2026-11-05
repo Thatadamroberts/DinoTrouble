@@ -55,6 +55,8 @@ var sprite: Sprite2D
 var bar: Node2D
 var pick_h := 10.0
 var anim_t := 0.0
+var last_frame := -1
+var trail_t := 0.0
 var breath_phase := randf() * 2.0
 var facing_left := false
 var prev_pos := Vector2.ZERO
@@ -325,6 +327,14 @@ func die() -> void:
 	remove_from_group("faction_" + faction)
 	world.spawn_fx("puff", position, Color(0.6, 0.5, 0.4) if not is_dino() else Color(0.6, 0.15, 0.1))
 	world.spawn_corpse(self)
+	match data.get("kind", ""):
+		"vehicle":
+			world.spawn_decal("scorch", position, 1.4)
+			world.spawn_fx("collapse", position)
+		"dino":
+			world.spawn_decal("blood", position, 0.8 + radius / 15.0)
+		_:
+			world.spawn_decal("blood", position, 0.8)
 	world.on_entity_died(self)
 	queue_free()
 
@@ -567,6 +577,14 @@ func _attack() -> void:
 	var proj: String = data.get("projectile", "")
 	if proj != "":
 		world.spawn_projectile(self, target, proj, dmg)
+		if world.is_on_screen(position):
+			var fw: float = sprite.texture.get_width() / float(Defs.SHEET_FRAMES)
+			var muzzle := position + Vector2((-1.0 if facing_left else 1.0) * fw * 0.42, -pick_h * 1.1)
+			match proj:
+				"bullet":
+					world.spawn_fx("flash", muzzle, Color(1.0, 0.85, 0.5), 0.7 if data.get("kind", "") == "human" else 0.9)
+				"venom":
+					world.spawn_fx("flash", muzzle, Color(0.5, 1.0, 0.35), 0.5)
 		match proj:
 			"venom":
 				world.play_sfx("spit", position)
@@ -773,6 +791,24 @@ func _animate(delta: float) -> void:
 		var breath := int((GameState.elapsed + breath_phase) / 0.7) % 2
 		sprite.frame = Defs.FRAMES_IDLE[breath]
 	sprite.flip_h = facing_left
+	_footsteps(moving, delta)
+
+
+## Dust where heavy feet land, and a dust trail behind vehicles.
+func _footsteps(moving: bool, delta: float) -> void:
+	var f := sprite.frame
+	var k: String = data.get("kind", "")
+	if moving and k == "dino" and f != last_frame and (f == Defs.FRAMES_WALK[1] or f == Defs.FRAMES_WALK[4]):
+		if world.is_on_screen(position):
+			world.spawn_fx("dust", position + Vector2(randf_range(-3, 3) + (radius * 0.4 if f == Defs.FRAMES_WALK[1] else -radius * 0.2), 1),
+				Color.WHITE, clampf(radius / 12.0, 0.6, 2.0))
+	elif moving and k == "vehicle":
+		trail_t -= delta
+		if trail_t <= 0.0:
+			trail_t = 0.12
+			if world.is_on_screen(position):
+				world.spawn_fx("dust", position + Vector2((radius if facing_left else -radius), 0), Color.WHITE, 1.2)
+	last_frame = f
 
 
 func _draw() -> void:

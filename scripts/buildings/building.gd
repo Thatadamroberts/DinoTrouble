@@ -3,6 +3,7 @@ extends Node2D
 ## Handles construction, production queues, income and tower attacks.
 
 const HpBar = preload("res://scripts/game/hp_bar.gd")
+const DamageFx = preload("res://scripts/buildings/damage_fx.gd")
 const QUEUE_MAX := 5
 
 var kind_tag := "building"
@@ -30,6 +31,7 @@ var pop_warned := false
 
 var sprite: Sprite2D
 var bar: Node2D
+var damage_fx: Node2D
 var world = null
 var map = null
 
@@ -60,6 +62,10 @@ func setup(id: String, fac: String, origin_tile: Vector2i, w, complete: bool = t
 	bar.width = size * 20.0
 	bar.position = Vector2(0, -(th - size * 16.0) - 6.0)
 	add_child(bar)
+
+	damage_fx = DamageFx.new()
+	add_child(damage_fx)
+	damage_fx.setup_building(self)
 
 	if not complete:
 		built = false
@@ -206,6 +212,7 @@ func die() -> void:
 	remove_from_group("faction_" + faction)
 	map.set_footprint(origin, size, false)
 	world.spawn_fx("collapse", position)
+	world.spawn_rubble(self)
 	world.play_sfx("collapse", position)
 	world.on_entity_died(self)
 	queue_free()
@@ -239,6 +246,8 @@ func _update_attack(delta: float) -> void:
 		attack_cd = float(atk["cooldown"])
 		var from := position + Vector2(0, -60)
 		world.spawn_projectile(self, target, "bullet", float(atk["damage"]), from)
+		if world.is_on_screen(from):
+			world.spawn_fx("flash", from + Vector2(signf(target.position.x - position.x) * 6.0, 0), Color(1.0, 0.85, 0.5), 0.8)
 		world.play_sfx("shot", position, -8.0)
 
 

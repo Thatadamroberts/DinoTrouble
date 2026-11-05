@@ -21,6 +21,12 @@ latest run under the repo's **Actions** tab and download:
   game, because the web export is single-threaded and needs no special
   headers.
 
+### Play in the browser
+Pushes to the default branch publish the web build to GitHub Pages:
+**https://thatadamroberts.github.io/DinoTrouble/**. This needs a one-time
+setup: under **Settings → Pages → Build and deployment**, set **Source** to
+**GitHub Actions**.
+
 ### Run from source
 1. Install [Godot 4.3](https://godotengine.org/download/archive/4.3-stable/).
 2. Open `project.godot` in the editor and press **F5**.

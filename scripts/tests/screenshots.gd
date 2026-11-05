@@ -38,16 +38,31 @@ func _ready() -> void:
 	await _shot("enemy", game.find_building("poacher", "poacher_camp").position, 1.0)
 	await _shot("coast", Iso.tile_to_world(Vector2i(32, 58)), 1.0)
 	await _shot("wide", Iso.tile_to_world(Vector2i(32, 32)), 0.5)
+	await _lineup()
 	print("[shots] done")
 	get_tree().quit(0)
 
 
-func _shot(name: String, pos: Vector2, zoom: float) -> void:
+## Every unit type side by side, shot close up at full resolution.
+func _lineup() -> void:
+	var ids := ["trex", "triceratops", "dilophosaurus", "raptor", "ranger", "engineer", "hunter", "trapper", "jeep"]
+	var origin: Vector2 = Iso.tile_to_world(World.PLAYER_BASE + Vector2i(9, -9))
+	var x := -200.0
+	for id in ids:
+		var u = game.spawn_unit(id, "player", origin + Vector2(x, 0))
+		u.set_physics_process(false)
+		x += 30.0 + u.sprite.texture.get_width() / float(Defs.SHEET_FRAMES) * 0.7
+	await _shot("units", origin + Vector2(x / 2.0 - 120.0, -20), 3.0, false)
+
+
+func _shot(name: String, pos: Vector2, zoom: float, half: bool = true) -> void:
 	game.camera.position = pos
 	game.camera.zoom = Vector2(zoom, zoom)
 	await _frames(20)
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
+	if half:
+		img.resize(img.get_width() / 2, img.get_height() / 2, Image.INTERPOLATE_NEAREST)
 	var path := ProjectSettings.globalize_path("res://screenshots/%s.png" % name)
 	img.save_png(path)
 	print("[shots] saved ", path)

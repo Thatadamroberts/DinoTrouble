@@ -5,3 +5,4 @@ export_credentials.cfg
 *.translation
 # Python
 __pycache__/
+screenshots/

@@ -32,9 +32,46 @@ jobs:
             exit 1
           fi
 
+  screenshots:
+    name: Render screenshots (GPU, Xvfb)
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install virtual display and Mesa
+        shell: bash
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb xauth libgl1-mesa-dri libglx-mesa0 libgl1 \
+            libxcursor1 libxinerama1 libxrandr2 libxi6 libxrender1 libxext6 libx11-6 libxkbcommon0 libfontconfig1 >/dev/null
+
+      - name: Import assets
+        shell: bash
+        run: timeout 300 godot --headless --import --path . || true
+
+      - name: Render
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout 300 xvfb-run -a -s "-screen 0 1280x720x24" \
+            godot --rendering-driver opengl3 --resolution 1280x720 --path . res://scenes/tests/screenshots.tscn 2>&1 | tee shots.log
+          if grep -E "SHADER ERROR|SCRIPT ERROR|Parse Error|Failed to load" shots.log; then
+            echo "::error::Errors while rendering"
+            exit 1
+          fi
+          ls -la screenshots
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: DinoTrouble-screenshots
+          path: screenshots
+
   export:
     name: Export Windows + Web
-    needs: smoke-test
+    needs: [smoke-test, screenshots]
     runs-on: ubuntu-latest
     container:
       image: barichello/godot-ci:4.3

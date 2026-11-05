@@ -14,6 +14,7 @@ const SelectionScript = preload("res://scripts/game/selection.gd")
 const CameraScript = preload("res://scripts/game/rts_camera.gd")
 const HudScript = preload("res://scripts/ui/hud.gd")
 const AIScript = preload("res://scripts/ai/poacher_ai.gd")
+const CorpseScript = preload("res://scripts/game/corpse.gd")
 
 const MAP_SIZE := 64
 const PLAYER_BASE := Vector2i(14, 49)
@@ -39,6 +40,7 @@ var map_seed := -1
 var map = null
 var ground: Node2D
 var entities: Node2D
+var ground_decor: Node2D
 var projectiles: Node2D
 var fog = null
 var selection = null
@@ -68,6 +70,10 @@ func _ready() -> void:
 	add_child(ground)
 	ground.setup(map)
 
+	ground_decor = Node2D.new()
+	ground_decor.name = "GroundDecor"
+	add_child(ground_decor)
+
 	entities = Node2D.new()
 	entities.name = "Entities"
 	entities.y_sort_enabled = true
@@ -77,6 +83,8 @@ func _ready() -> void:
 	projectiles.name = "Projectiles"
 	projectiles.z_index = 20
 	add_child(projectiles)
+
+	_setup_atmosphere()
 
 	fog = FogScript.new()
 	fog.name = "Fog"
@@ -127,20 +135,49 @@ func _build_map() -> void:
 	map.generate(map_seed, clearings, roads)
 
 
+## Pixels between the bottom of a decor sprite and the point it stands on,
+## and how strongly it sways in the wind.
+const DECOR_STYLE := {
+	"tree": {"base": 6, "x": 4, "sway": 1.0},
+	"palm": {"base": 6, "x": 4, "sway": 2.0},
+	"bush": {"base": 3, "x": 0, "sway": 1.0},
+	"boulder": {"base": 4, "x": 0, "sway": 0.0},
+	"tuft": {"base": 2, "x": 0, "sway": 1.0},
+	"flowers": {"base": 2, "x": 0, "sway": 1.0},
+}
+
+
 func _spawn_decor() -> void:
 	var textures := {}
+	var sway_shader: Shader = load("res://shaders/sway.gdshader")
+	var materials := {}
 	for d in map.decor:
-		var key := "%s_%d" % [d["type"], d["variant"]]
+		var kind: String = d["type"]
+		var key := "%s_%d" % [kind, d["variant"]]
 		if not textures.has(key):
 			textures[key] = load("res://assets/sprites/decor/%s.png" % key)
+		var style: Dictionary = DECOR_STYLE.get(kind, {"base": 4, "x": 0, "sway": 0.0})
 		var s := Sprite2D.new()
 		var tex: Texture2D = textures[key]
 		s.texture = tex
-		var jitter := Vector2(randf_range(-5, 5), randf_range(-3, 3))
+		var walkable: bool = kind in ["bush", "tuft", "flowers"]
+		var jitter := Vector2(randf_range(-12, 12), randf_range(-6, 6)) if walkable else Vector2(randf_range(-4, 4), randf_range(-2, 2))
 		s.position = Iso.tile_to_world(d["tile"]) + jitter
-		s.offset = Vector2(0, -tex.get_height() / 2.0 + (4.0 if d["type"] != "bush" else 2.0))
-		s.flip_h = randf() < 0.5
-		entities.add_child(s)
+		s.offset = Vector2(float(style["x"]), -tex.get_height() / 2.0 + float(style["base"]))
+		var amount: float = style["sway"]
+		if amount > 0.0:
+			if not materials.has(amount):
+				var m := ShaderMaterial.new()
+				m.shader = sway_shader
+				m.set_shader_parameter("amount", amount)
+				m.set_shader_parameter("speed", 1.1 + amount * 0.2)
+				materials[amount] = m
+			s.material = materials[amount]
+		if kind in ["tuft", "flowers"]:
+			s.z_index = -1  # always under units walking through them
+			ground_decor.add_child(s)
+		else:
+			entities.add_child(s)
 
 
 func _spawn_start() -> void:
@@ -173,6 +210,44 @@ func _spawn_start() -> void:
 func free_spot(t: Vector2i) -> Vector2:
 	var w: Vector2i = map.nearest_walkable(t + Vector2i(randi_range(-1, 1), randi_range(-1, 1)))
 	return Iso.tile_to_world(w) + Vector2(randf_range(-10, 10), randf_range(-5, 5))
+
+
+## Warm colour grading, drifting cloud shadows and a screen vignette.
+func _setup_atmosphere() -> void:
+	var grade := CanvasModulate.new()
+	grade.color = Color(1.0, 0.96, 0.88)
+	add_child(grade)
+
+	var clouds := Node2D.new()
+	clouds.name = "CloudShadows"
+	clouds.z_index = 35
+	var cm := ShaderMaterial.new()
+	cm.shader = load("res://shaders/clouds.gdshader")
+	cm.set_shader_parameter("tex_noise", load("res://assets/sprites/terrain/noise.png"))
+	clouds.material = cm
+	clouds.draw.connect(func():
+		var span := MAP_SIZE * 32.0 + 1200.0
+		clouds.draw_rect(Rect2(-span, -800.0, span * 2.0, MAP_SIZE * 32.0 + 1600.0), Color.WHITE)
+	)
+	add_child(clouds)
+	clouds.queue_redraw()
+
+	var layer := CanvasLayer.new()
+	layer.layer = 5
+	var vignette := ColorRect.new()
+	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var vm := ShaderMaterial.new()
+	vm.shader = load("res://shaders/vignette.gdshader")
+	vignette.material = vm
+	layer.add_child(vignette)
+	add_child(layer)
+	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+
+func spawn_corpse(u) -> void:
+	var c = CorpseScript.new()
+	c.setup(u)
+	entities.add_child(c)
 
 
 # ---------------------------------------------------------------------------

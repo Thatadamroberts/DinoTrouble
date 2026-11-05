@@ -4,6 +4,8 @@ extends RefCounted
 enum T { WATER, SAND, GRASS, JUNGLE, DIRT, ROCK }
 
 const TILE_NAMES := ["water", "sand", "grass", "jungle", "dirt", "rock"]
+const DECOR_VARIANTS := {"tree": 3, "palm": 2, "bush": 2, "boulder": 2, "tuft": 3, "flowers": 4}
+const WALKABLE_DECOR := ["bush", "tuft", "flowers"]
 
 var size := 64
 var tiles := PackedByteArray()
@@ -11,6 +13,8 @@ var blocked := PackedByteArray()  # trees, boulders, buildings, resources
 var clear := PackedByteArray()  # kept free of decoration
 var decor: Array = []  # [{"type": String, "tile": Vector2i, "variant": int}]
 var astar := AStarGrid2D.new()
+## Bumped whenever blocking changes, so renderers know to refresh.
+var version := 0
 
 
 func idx(t: Vector2i) -> int:
@@ -44,6 +48,7 @@ func set_blocked(t: Vector2i, value: bool) -> void:
 		return
 	blocked[idx(t)] = 1 if value else 0
 	astar.set_point_solid(t, not is_walkable(t))
+	version += 1
 
 
 func set_footprint(origin: Vector2i, s: int, value: bool) -> void:
@@ -171,41 +176,52 @@ func _place_decor(rng: RandomNumberGenerator) -> void:
 		for x in size:
 			var t := Vector2i(x, y)
 			var i := idx(t)
-			if clear[i] != 0:
-				continue
 			var kind: int = tiles[i]
 			if kind == T.WATER:
 				continue
 			var r := rng.randf()
 			var kind_name := ""
-			match kind:
-				T.JUNGLE:
-					if r < 0.30:
-						kind_name = "tree"
-					elif r < 0.42:
-						kind_name = "palm"
-					elif r < 0.62:
-						kind_name = "bush"
-				T.GRASS:
-					if r < 0.03:
-						kind_name = "tree"
-					elif r < 0.05:
-						kind_name = "palm"
-					elif r < 0.10:
-						kind_name = "bush"
-					elif r < 0.11:
-						kind_name = "boulder"
-				T.SAND:
-					if r < 0.05:
-						kind_name = "palm"
-				T.DIRT, T.ROCK:
-					if r < 0.03:
-						kind_name = "boulder"
+			if clear[i] != 0:
+				# open ground keeps only a little low, walkable greenery
+				if kind == T.GRASS and r < 0.08:
+					kind_name = "tuft" if r < 0.06 else "flowers"
+			else:
+				match kind:
+					T.JUNGLE:
+						if r < 0.30:
+							kind_name = "tree"
+						elif r < 0.42:
+							kind_name = "palm"
+						elif r < 0.60:
+							kind_name = "bush"
+						elif r < 0.72:
+							kind_name = "tuft"
+					T.GRASS:
+						if r < 0.03:
+							kind_name = "tree"
+						elif r < 0.05:
+							kind_name = "palm"
+						elif r < 0.09:
+							kind_name = "bush"
+						elif r < 0.10:
+							kind_name = "boulder"
+						elif r < 0.24:
+							kind_name = "tuft"
+						elif r < 0.28:
+							kind_name = "flowers"
+					T.SAND:
+						if r < 0.05:
+							kind_name = "palm"
+					T.DIRT, T.ROCK:
+						if r < 0.03:
+							kind_name = "boulder"
+						elif r < 0.06 and kind == T.DIRT:
+							kind_name = "tuft"
 			if kind_name == "":
 				continue
-			var variants := 3 if kind_name == "tree" else 2
+			var variants: int = DECOR_VARIANTS[kind_name]
 			decor.append({"type": kind_name, "tile": t, "variant": rng.randi_range(0, variants - 1)})
-			if kind_name != "bush":
+			if not WALKABLE_DECOR.has(kind_name):
 				blocked[i] = 1
 
 

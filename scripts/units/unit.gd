@@ -55,6 +55,7 @@ var sprite: Sprite2D
 var bar: Node2D
 var pick_h := 10.0
 var anim_t := 0.0
+var breath_phase := randf() * 2.0
 var facing_left := false
 var prev_pos := Vector2.ZERO
 var world = null
@@ -77,7 +78,7 @@ func setup(id: String, fac: String, pos: Vector2, w) -> void:
 
 	sprite = Sprite2D.new()
 	sprite.texture = Defs.unit_texture(id)
-	sprite.hframes = 7
+	sprite.hframes = Defs.SHEET_FRAMES
 	var fh: float = sprite.texture.get_height()
 	sprite.offset = Vector2(0, -fh / 2.0 + 3.0)
 	add_child(sprite)
@@ -323,6 +324,7 @@ func die() -> void:
 	remove_from_group("entities")
 	remove_from_group("faction_" + faction)
 	world.spawn_fx("puff", position, Color(0.6, 0.5, 0.4) if not is_dino() else Color(0.6, 0.15, 0.1))
+	world.spawn_corpse(self)
 	world.on_entity_died(self)
 	queue_free()
 
@@ -762,22 +764,26 @@ func _animate(delta: float) -> void:
 	if moving and absf(moved.x) > 0.02:
 		facing_left = moved.x < 0.0
 	if attack_anim_t > 0.0:
-		sprite.frame = 5 if attack_anim_t > 0.15 else 6
+		var k := clampi(int((0.3 - attack_anim_t) / 0.1), 0, 2)
+		sprite.frame = Defs.FRAMES_ATTACK[k]
 	elif moving:
-		anim_t += delta * clampf(float(data["speed"]) / 10.0, 6.0, 12.0)
-		sprite.frame = 1 + int(anim_t) % 4
+		anim_t += delta * clampf(float(data["speed"]) / 8.0, 8.0, 14.0)
+		sprite.frame = Defs.FRAMES_WALK[int(anim_t) % Defs.FRAMES_WALK.size()]
 	else:
-		sprite.frame = 0
+		var breath := int((GameState.elapsed + breath_phase) / 0.7) % 2
+		sprite.frame = Defs.FRAMES_IDLE[breath]
 	sprite.flip_h = facing_left
 
 
 func _draw() -> void:
 	var col: Color = Defs.faction_color(faction)
 	var r := radius * 1.3
+	draw_set_transform(Vector2(3, 1), 0.0, Vector2(1.0, 0.45))
+	draw_circle(Vector2.ZERO, r * 1.1, Color(0.02, 0.05, 0.02, 0.18))
+	draw_circle(Vector2.ZERO, r * 0.8, Color(0.02, 0.05, 0.02, 0.2))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.5))
-	draw_circle(Vector2.ZERO, r, Color(0, 0, 0, 0.25))
 	if selected:
 		draw_arc(Vector2.ZERO, r + 2.0, 0.0, TAU, 28, col, 2.5)
 	elif faction != "wild":
-		draw_arc(Vector2.ZERO, r, 0.0, TAU, 24, Color(col, 0.45), 1.5)
+		draw_arc(Vector2.ZERO, r, 0.0, TAU, 24, Color(col, 0.4), 1.5)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

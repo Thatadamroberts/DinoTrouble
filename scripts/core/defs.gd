@@ -5,6 +5,13 @@ extends Node
 
 const POP_CAP := 30
 
+## Unit sprite sheet layout (all frames face right).
+const SHEET_FRAMES := 13
+const FRAMES_IDLE := [0, 1]
+const FRAMES_WALK := [2, 3, 4, 5, 6, 7]
+const FRAMES_ATTACK := [8, 9, 10]
+const FRAMES_DEATH := [11, 12]
+
 const UNITS := {
 	# ---- Rangers (player) -------------------------------------------------
 	"ranger": {
@@ -166,7 +173,7 @@ func unit_portrait(id: String) -> Texture2D:
 		var sheet := unit_texture(id)
 		var at := AtlasTexture.new()
 		at.atlas = sheet
-		at.region = Rect2(0, 0, sheet.get_width() / 7.0, sheet.get_height())
+		at.region = Rect2(0, 0, sheet.get_width() / float(SHEET_FRAMES), sheet.get_height())
 		_tex_cache[key] = at
 	return _tex_cache[key]
 

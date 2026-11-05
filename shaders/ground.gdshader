@@ -30,7 +30,8 @@ float nz(vec2 p) {
 }
 
 vec3 water_color(float depth, vec2 px, float b) {
-	float d = clamp(depth, 0.0, 1.0) * 3.0 + (b - 0.5) * 0.85;
+	// noise breaks up the tile-shaped steps of the depth field
+	float d = clamp(depth + (nz(px / 210.0 + vec2(0.21, 0.53)) - 0.5) * 0.45, 0.0, 1.0) * 3.0 + (b - 0.5) * 0.6;
 	vec3 c0 = vec3(0.30, 0.66, 0.66);
 	vec3 c1 = vec3(0.18, 0.50, 0.60);
 	vec3 c2 = vec3(0.12, 0.36, 0.52);

@@ -46,7 +46,7 @@ func _ready() -> void:
 ## Every unit type side by side, shot close up at full resolution.
 func _lineup() -> void:
 	var ids := ["trex", "triceratops", "dilophosaurus", "raptor", "ranger", "engineer", "hunter", "trapper", "jeep"]
-	var origin: Vector2 = Iso.tile_to_world(World.PLAYER_BASE + Vector2i(9, -9))
+	var origin: Vector2 = Iso.tile_to_world(World.PLAYER_BASE + Vector2i(5, 5))
 	var x := -200.0
 	for id in ids:
 		var u = game.spawn_unit(id, "player", origin + Vector2(x, 0))

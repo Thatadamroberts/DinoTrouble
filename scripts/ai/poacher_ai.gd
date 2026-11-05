@@ -142,6 +142,7 @@ func _launch_wave(units: Array) -> void:
 	for u in units:
 		u.cmd_attack_move(tgt.position + Vector2(rng.randf_range(-40, 40), rng.randf_range(-20, 20)))
 	GameState.notify("Poacher attack wave %d incoming!" % wave_n)
+	Audio.ui("wave_drums", -2.0)
 	world.play_ui("alert")
 	if world.hud != null:
 		world.hud.ping_minimap(units[0].position)

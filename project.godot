@@ -21,6 +21,7 @@ config/icon="res://icon.png"
 Iso="*res://scripts/core/iso.gd"
 Defs="*res://scripts/core/defs.gd"
 GameState="*res://scripts/core/game_state.gd"
+Audio="*res://scripts/core/audio.gd"
 SaveSystem="*res://scripts/core/save_system.gd"
 
 [display]
@@ -36,3 +37,9 @@ textures/canvas_textures/default_texture_filter=0
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 environment/defaults/default_clear_color=Color(0.051, 0.118, 0.2, 1)
+
+[importer_defaults]
+
+wav={
+"compress/mode": 1
+}

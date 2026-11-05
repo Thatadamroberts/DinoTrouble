@@ -146,13 +146,40 @@ dithered edges, and animates the water's depth bands, waves and shore foam.
 Other shaders add drifting cloud shadows, foliage swaying in the wind and a
 vignette, and a warm colour grade sits over the whole scene.
 
-To replace any of it, drop in a PNG with the same size and layout. Sound
-effects are synthesised by `gen_sounds.py`.
+To replace any of it, drop in a PNG with the same size and layout.
+
+### Audio
+All audio is synthesised by `tools/gen_sounds.py`, using a small numpy DSP kit
+(`tools/audiokit.py`) and synth instruments (`tools/instruments.py`):
+
+- **Sound effects** (`assets/sfx/<name>_<n>.wav`, 3–4 variations each):
+  - Weapons: rifles, the jeep's machine gun, tower shots, venom spit and nets.
+  - Creatures: a call for each species, small and large bites, heavy
+    footsteps, deaths and hits.
+  - World: hatching, building, gathering, collapses, explosions, a fire loop
+    and splashes.
+  - Interface: UI clicks, an objective chime, a wave-alert drum hit, and
+    victory and defeat jingles.
+- **Music** (`assets/music/`): looping adventure tracks built from tribal
+  drums, marimba, pads and a horn lead. There's a menu theme, an exploration
+  track and a combat track. The game crossfades to combat music when
+  fighting starts near you and back once it's quiet.
+- **Ambience** (`assets/ambience/`): jungle by day (birds, insects, wind),
+  night (crickets, frogs) and surf. It follows the day/night cycle and how
+  much coast is on screen.
+
+The `Audio` autoload (`scripts/core/audio.gd`) mixes everything on separate
+Music, Effects, Ambience and UI channels, each with its own volume slider in
+Settings. Since the sounds are generated rather than recorded,
+`tools/check_audio.py` checks for clipping, silence, loop seams and
+near-identical variations, and `tools/audio_preview.py` draws spectrograms to
+look at.
 
 ```bash
 pip install pillow numpy
 python3 tools/gen_sprites.py
 python3 tools/gen_sounds.py
+python3 tools/check_audio.py
 ```
 
 CI also renders the game with a real (software) GPU and uploads

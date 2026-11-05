@@ -330,6 +330,13 @@ func die() -> void:
 	world.spawn_fx("puff", position, Color(0.6, 0.5, 0.4) if not is_dino() else Color(0.6, 0.15, 0.1))
 	world.spawn_corpse(self)
 	match data.get("kind", ""):
+		"dino":
+			world.play_sfx("dino_death", position, -3.0, 1.25 if radius < 12.0 else 0.85)
+		"vehicle":
+			world.play_sfx("explosion", position)
+		_:
+			world.play_sfx("human_down", position, -4.0)
+	match data.get("kind", ""):
 		"vehicle":
 			world.spawn_decal("scorch", position, 1.4)
 			world.spawn_fx("collapse", position)
@@ -559,7 +566,7 @@ func _do_attack(delta: float) -> void:
 	if ability == "charge" and ability_cd <= 0.0 and d > 60.0 and d < 240.0:
 		charge_t = 1.2
 		ability_cd = 10.0
-		world.play_sfx("roar", position, -10.0, 1.6)
+		world.play_sfx("trike_call", position, -4.0)
 	if d < 110.0 and map.line_clear(position, target.position):
 		_step_toward(target.position, delta)
 	elif path_done() and d < rng + 70.0:
@@ -590,14 +597,18 @@ func _attack() -> void:
 		match proj:
 			"venom":
 				world.play_sfx("spit", position)
+				if randf() < 0.25:
+					world.play_sfx("dilo_call", position, -6.0)
 			"net":
 				world.play_sfx("net", position)
 			_:
-				world.play_sfx("shot", position, -6.0)
+				world.play_sfx("burst" if def_id == "jeep" else "shot", position, -4.0)
 		return
 	var tpos: Vector2 = target.position
 	world.apply_hit(self, target, dmg, "melee")
-	world.play_sfx("bite", position, -4.0)
+	world.play_sfx("bite_large" if radius >= 15.0 else "bite_small", position, -3.0)
+	if randf() < 0.2:
+		_call()
 	var splash: float = data.get("splash", 0.0)
 	if splash > 0.0:
 		for o in world.units_near(tpos, splash):
@@ -624,7 +635,7 @@ func _charge_hit() -> void:
 func _roar() -> void:
 	ability_cd = 18.0
 	world.spawn_fx("roar", position + Vector2(0, -20))
-	world.play_sfx("roar", position)
+	world.play_sfx("trex_roar", position)
 	for o in world.units_near(position, 200.0):
 		if o.dead or o.faction == faction or o.faction == "wild":
 			continue
@@ -660,6 +671,7 @@ func _do_gather(delta: float) -> void:
 		gather_t += delta
 		if fmod(gather_t, 0.5) < delta:
 			attack_anim_t = 0.25
+			world.play_sfx("gather_rock" if gather_node.res_type == "dna" else "gather_wood", position, -10.0)
 		_face(gather_node.position)
 		if gather_t >= GATHER_TIME:
 			gather_t = 0.0
@@ -807,12 +819,27 @@ func _set_col(col: int) -> void:
 	sprite.frame_coords = Vector2i(col, 1 if facing_back else 0)
 
 
+## A species-specific call (growl, screech, bellow).
+func _call(db: float = -5.0) -> void:
+	match def_id:
+		"raptor":
+			world.play_sfx("raptor_call", position, db)
+		"dilophosaurus":
+			world.play_sfx("dilo_call", position, db)
+		"triceratops":
+			world.play_sfx("trike_call", position, db)
+		"trex":
+			world.play_sfx("trex_roar", position, db - 3.0)
+
+
 ## Dust where heavy feet land, and a dust trail behind vehicles.
 func _footsteps(moving: bool, delta: float) -> void:
 	var f := sprite.frame_coords.x
 	var k: String = data.get("kind", "")
 	if moving and k == "dino" and f != last_frame and (f == Defs.FRAMES_WALK[1] or f == Defs.FRAMES_WALK[4]):
 		if world.is_on_screen(position):
+			if radius >= 15.0:
+				world.play_sfx("stomp", position, -2.0 if def_id == "trex" else -7.0, 1.0 if def_id == "trex" else 1.3)
 			world.spawn_fx("dust", position + Vector2(randf_range(-3, 3) + (radius * 0.4 if f == Defs.FRAMES_WALK[1] else -radius * 0.2), 1),
 				Color.WHITE, clampf(radius / 12.0, 0.6, 2.0))
 	elif moving and k == "vehicle":

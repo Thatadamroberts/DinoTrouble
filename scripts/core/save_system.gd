@@ -14,6 +14,9 @@ var unlocked := 1  # campaign missions available
 var completed := {}  # mission id -> true
 var settings := {
 	"master_volume": 0.8,
+	"music_volume": 0.6,
+	"sfx_volume": 0.9,
+	"ambience_volume": 0.7,
 	"edge_scroll": true,
 	"scroll_speed": 1.0,
 	"fullscreen": false,
@@ -79,6 +82,12 @@ func apply_settings() -> void:
 	var v := clampf(float(settings["master_volume"]), 0.0, 1.0)
 	AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(v, 0.0001)))
 	AudioServer.set_bus_mute(bus, v <= 0.001)
+	for pair in [["Music", "music_volume"], ["SFX", "sfx_volume"], ["UI", "sfx_volume"], ["Ambience", "ambience_volume"]]:
+		var bi := AudioServer.get_bus_index(pair[0])
+		if bi >= 0:
+			var lv := clampf(float(settings[pair[1]]), 0.0, 1.0)
+			AudioServer.set_bus_volume_db(bi, linear_to_db(maxf(lv, 0.0001)))
+			AudioServer.set_bus_mute(bi, lv <= 0.001)
 	if not OS.has_feature("web") and DisplayServer.get_name() != "headless":
 		var fs := bool(settings["fullscreen"])
 		var mode := DisplayServer.WINDOW_MODE_FULLSCREEN if fs else DisplayServer.WINDOW_MODE_WINDOWED

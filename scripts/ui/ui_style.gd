@@ -32,4 +32,5 @@ static func button(text: String, width: float = 260.0) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(width, 38)
 	b.add_theme_font_size_override("font_size", 18)
+	b.pressed.connect(func(): Audio.ui("ui_click"))
 	return b

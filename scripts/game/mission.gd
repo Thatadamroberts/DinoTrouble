@@ -71,7 +71,7 @@ func _evaluate_all(announce: bool) -> void:
 			o["done"] = true
 			if announce:
 				GameState.notify("Objective complete: " + String(o["def"]["text"]))
-				world.play_ui("select")
+				Audio.ui("objective")
 		else:
 			all_done = false
 			if is_sequential():

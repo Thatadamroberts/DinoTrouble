@@ -14,6 +14,7 @@ var parade: Array = []
 
 func _ready() -> void:
 	get_tree().paused = false
+	Audio.set_music("menu")
 	var bg := TextureRect.new()
 	bg.texture = load("res://assets/sprites/ui/menu_bg.png")
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -87,6 +88,7 @@ func _button(text: String) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = Vector2(280, 46)
+	b.pressed.connect(func(): Audio.ui("ui_click"))
 	b.add_theme_font_size_override("font_size", 22)
 	return b
 

@@ -13,15 +13,17 @@ func _ready() -> void:
 	add_child(vb)
 	vb.add_child(UI.label("Settings", 26))
 
-	vb.add_child(UI.label("Master volume", 15, UI.DIM))
-	var vol := HSlider.new()
-	vol.min_value = 0.0
-	vol.max_value = 1.0
-	vol.step = 0.05
-	vol.custom_minimum_size = Vector2(300, 24)
-	vol.value = float(SaveSystem.settings["master_volume"])
-	vol.value_changed.connect(func(v): SaveSystem.set_setting("master_volume", v))
-	vb.add_child(vol)
+	for row in [["Master volume", "master_volume"], ["Music", "music_volume"], ["Effects", "sfx_volume"], ["Ambience", "ambience_volume"]]:
+		vb.add_child(UI.label(row[0], 15, UI.DIM))
+		var sl := HSlider.new()
+		sl.min_value = 0.0
+		sl.max_value = 1.0
+		sl.step = 0.05
+		sl.custom_minimum_size = Vector2(300, 22)
+		sl.value = float(SaveSystem.settings[row[1]])
+		sl.value_changed.connect(func(v): SaveSystem.set_setting(row[1], v))
+		sl.drag_ended.connect(func(_changed): Audio.ui("ui_click"))
+		vb.add_child(sl)
 
 	vb.add_child(UI.label("Camera scroll speed", 15, UI.DIM))
 	var spd := HSlider.new()

@@ -74,6 +74,7 @@ func _process(delta: float) -> void:
 			var tile: Vector2i = Iso.world_to_tile(q)
 			if world.map.get_tile(tile) == 0 and world.map.in_bounds(tile):
 				world.spawn_fx("splash", q)
+				world.play_sfx("splash", q, -10.0)
 				break
 	queue_redraw()
 	shadow_layer.queue_redraw()

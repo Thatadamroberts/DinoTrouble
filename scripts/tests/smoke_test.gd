@@ -189,6 +189,37 @@ func _campaign_tests() -> void:
 	_check(GameState.night() > 0.9 and GameState.sight_mult() < 0.8, "night falls and sight shrinks")
 	GameState.time_of_day = 0.3
 	_check(GameState.night() < 0.05, "daytime is bright")
+	await _audio_tests()
+
+
+func _audio_tests() -> void:
+	var buses_ok := true
+	for b in ["Music", "SFX", "Ambience", "UI"]:
+		buses_ok = buses_ok and AudioServer.get_bus_index(b) >= 0
+	_check(buses_ok, "audio buses exist")
+	var missing: Array = []
+	for snd in ["shot", "burst", "tower_shot", "spit", "net", "bite", "bite_small", "bite_large", "roar", "trex_roar",
+			"raptor_call", "dilo_call", "trike_call", "stomp", "impact_flesh", "impact_wood", "dino_death", "human_down",
+			"hatch", "build", "gather_rock", "gather_wood", "collapse", "explosion", "splash", "select", "ui_click",
+			"ui_confirm", "objective", "alert", "wave_drums", "victory", "defeat"]:
+		if not Audio.has_sound(snd):
+			missing.append(snd)
+	_check(missing.is_empty(), "every sound effect has variants (missing: %s)" % [missing])
+	_check(Audio.loop_stream(Audio.MUSIC["combat"]) != null and Audio.loop_stream(Audio.AMBIENCE["surf"]) != null, "music and ambience load")
+	_check(Audio.music_state == "explore", "exploration music plays in a match (got %s)" % Audio.music_state)
+	Audio.combat_ping()
+	Audio.combat_ping()
+	await _seconds(0.3)
+	_check(Audio.music_state == "combat", "fighting switches to combat music")
+	Audio.last_combat -= 30.0
+	await _seconds(0.3)
+	_check(Audio.music_state == "explore", "quiet returns to exploration music")
+	GameState.time_of_day = 0.8
+	await _seconds(3.0)
+	_check(float(Audio.amb_level["night"]) > float(Audio.amb_level["day"]), "night ambience takes over after dark")
+	SaveSystem.set_setting("music_volume", 0.5)
+	var vol := AudioServer.get_bus_volume_db(AudioServer.get_bus_index("Music"))
+	_check(absf(vol - linear_to_db(0.5)) < 0.1, "music volume setting drives the Music bus")
 
 
 func _finish() -> void:

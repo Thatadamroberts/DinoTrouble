@@ -13,6 +13,7 @@ var level := 0  # 0 none, 1 smoke, 2 fire
 var parts: Array = []
 var emit_t := 0.0
 var sources: Array = []
+var fire_audio: AudioStreamPlayer2D
 
 
 func setup_building(b) -> void:
@@ -54,6 +55,7 @@ func _process(delta: float) -> void:
 		level = 1
 	else:
 		level = 0
+	_update_fire_audio()
 	var on_screen: bool = world == null or world.view_rect().grow(250.0).has_point(global_position)
 	if level > 0 and on_screen:
 		emit_t -= delta
@@ -74,6 +76,22 @@ func _process(delta: float) -> void:
 	parts = parts.filter(func(p): return p["age"] < p["life"])
 	if not parts.is_empty() or level > 0:
 		queue_redraw()
+
+
+## Crackling fire loop while the building burns.
+func _update_fire_audio() -> void:
+	if level == 2 and building != null:
+		if fire_audio == null:
+			fire_audio = AudioStreamPlayer2D.new()
+			fire_audio.bus = "SFX"
+			fire_audio.stream = Audio.loop_stream("res://assets/sfx/fire_loop_0.wav")
+			fire_audio.volume_db = -8.0
+			fire_audio.max_distance = 1200.0
+			add_child(fire_audio)
+		if not fire_audio.playing:
+			fire_audio.play()
+	elif fire_audio != null and fire_audio.playing:
+		fire_audio.stop()
 
 
 func _emit() -> void:

@@ -56,11 +56,6 @@ var hud = null
 var ai = null
 
 var grid_hash := {}
-var sfx_pool: Array = []
-var sfx_next := 0
-var sfx_last := {}
-var sfx_cache := {}
-var ui_player: AudioStreamPlayer
 var alert_cd := 0.0
 var spawn_count := {}
 var decals: Array = []
@@ -480,6 +475,12 @@ func apply_hit(attacker, target, dmg: float, kind: String) -> void:
 	var target_faction: String = target.faction
 	var target_unit: bool = target.kind_tag == "unit"
 	var fx_pos: Vector2 = target.position + Vector2(0, -10)
+	if target_faction == "player" or (src != null and src.faction == "player") or is_on_screen(fx_pos, 0.0):
+		Audio.combat_ping()
+	if not target_unit:
+		play_sfx("impact_wood", fx_pos, -8.0)
+	elif kind == "bullet" and randf() < 0.35:
+		play_sfx("impact_flesh", fx_pos, -12.0)
 	target.take_damage(dmg, src)
 	if was_alive and target.dead and src != null:
 		if src.faction == "player" and target_faction == "poacher":
@@ -726,6 +727,7 @@ func on_entity_died(e) -> void:
 		GameState.stats["rescued"] = int(GameState.stats.get("rescued", 0)) + 2
 		GameState.notify("Eggs rescued! Two hatchlings have joined the reserve.")
 		play_sfx("hatch", e.position)
+		play_sfx("raptor_call", e.position, -6.0, 1.4)
 	if e.kind_tag == "building":
 		_check_end()
 
@@ -742,7 +744,7 @@ func _on_game_over(victory: bool) -> void:
 	var idx := MissionsScript.index_of(GameState.mission_id)
 	if victory and idx >= 0:
 		SaveSystem.mark_completed(GameState.mission_id, idx, MissionsScript.CAMPAIGN.size())
-	play_ui("victory" if victory else "defeat")
+	Audio.stinger("victory" if victory else "defeat")
 	if hud != null:
 		hud.show_end(victory)
 
@@ -751,39 +753,13 @@ func _on_game_over(victory: bool) -> void:
 # Audio
 # ---------------------------------------------------------------------------
 func _setup_audio() -> void:
-	for i in 12:
-		var p := AudioStreamPlayer2D.new()
-		p.max_distance = 1400.0
-		p.bus = "Master"
-		add_child(p)
-		sfx_pool.append(p)
-	ui_player = AudioStreamPlayer.new()
-	add_child(ui_player)
-
-
-func _stream(sound: String) -> AudioStream:
-	if not sfx_cache.has(sound):
-		sfx_cache[sound] = load("res://assets/sfx/%s.wav" % sound)
-	return sfx_cache[sound]
+	Audio.attach_world(self)
+	tree_exiting.connect(func(): Audio.detach_world(self))
 
 
 func play_sfx(sound: String, pos: Vector2, db: float = 0.0, pitch: float = 1.0) -> void:
-	var now := Time.get_ticks_msec()
-	if now - int(sfx_last.get(sound, -1000)) < 60:
-		return
-	if not view_rect().grow(300.0).has_point(pos):
-		return
-	sfx_last[sound] = now
-	var p: AudioStreamPlayer2D = sfx_pool[sfx_next]
-	sfx_next = (sfx_next + 1) % sfx_pool.size()
-	p.stream = _stream(sound)
-	p.global_position = pos
-	p.volume_db = db - 4.0
-	p.pitch_scale = pitch * randf_range(0.92, 1.08)
-	p.play()
+	Audio.play(sound, pos, db, pitch)
 
 
 func play_ui(sound: String) -> void:
-	ui_player.stream = _stream(sound)
-	ui_player.volume_db = -6.0
-	ui_player.play()
+	Audio.ui(sound, -4.0)

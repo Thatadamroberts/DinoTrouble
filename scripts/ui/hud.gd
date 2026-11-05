@@ -93,6 +93,7 @@ func _button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = Vector2(220, 38)
+	b.pressed.connect(func(): Audio.ui("ui_click"))
 	b.add_theme_font_size_override("font_size", 18)
 	b.pressed.connect(cb)
 	return b
@@ -413,6 +414,7 @@ func _cmd_button(icon: Texture2D, label: String, tip: String, cb: Callable) -> v
 	var key_name: String = Defs.HOTKEY_NAMES[slot] if slot < Defs.HOTKEY_NAMES.size() else ""
 	b.tooltip_text = "%s  [%s]" % [tip, key_name]
 	b.pressed.connect(cb)
+	b.pressed.connect(func(): Audio.ui("ui_click", -4.0))
 	var hint := _label(key_name, 11, Color(1, 1, 0.6))
 	hint.position = Vector2(3, 0)
 	b.add_child(hint)

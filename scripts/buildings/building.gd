@@ -149,6 +149,7 @@ func _update_production(delta: float) -> void:
 	var u = world.spawn_unit(id, faction, spawn_point())
 	if Defs.UNITS[id]["kind"] == "dino":
 		world.play_sfx("hatch", position)
+		u._call(-6.0)
 		world.spawn_fx("hearts", u.position + Vector2(0, -16))
 		if faction == "player":
 			GameState.stats["hatched"] += 1
@@ -183,6 +184,7 @@ func add_build_progress(delta: float) -> void:
 		queue_redraw()
 		if faction == "player":
 			GameState.notify("%s complete." % data["name"])
+			Audio.ui("ui_confirm", -6.0)
 			var key := "built_" + def_id
 			GameState.stats[key] = int(GameState.stats.get(key, 0)) + 1
 
@@ -250,7 +252,7 @@ func _update_attack(delta: float) -> void:
 		world.spawn_projectile(self, target, "bullet", float(atk["damage"]), from)
 		if world.is_on_screen(from):
 			world.spawn_fx("flash", from + Vector2(signf(target.position.x - position.x) * 6.0, 0), Color(1.0, 0.85, 0.5), 0.8)
-		world.play_sfx("shot", position, -8.0)
+		world.play_sfx("tower_shot", position, -6.0)
 
 
 func _draw() -> void:
